@@ -66,7 +66,9 @@ volatile uint16_t ui16_g_adc_torque_sensor_min_value;
 volatile uint16_t ui16_g_adc_battery_current_offset;
 volatile uint8_t ui8_g_ebike_app_state = EBIKE_APP_STATE_MOTOR_STOP;
 volatile uint16_t ui16_g_adc_target_battery_max_current;
+volatile uint16_t ui16_g_adc_target_motor_max_current;
 uint16_t ui16_m_adc_battery_current_max;
+uint16_t ui16_m_adc_motor_current_max;
 volatile uint16_t ui16_g_current_ramp_up_inverse_step;
 
 
@@ -112,7 +114,9 @@ static void communications_process_packages(uint8_t ui8_frame_type);
 // system functions
 static void ebike_control_motor(void);
 static void ebike_app_set_battery_max_current(uint8_t ui8_value);
+static void ebike_app_set_motor_max_current(uint8_t ui8_value);
 static void ebike_app_set_target_adc_battery_max_current(uint16_t ui16_value);
+static void ebike_app_set_target_adc_motor_max_current(uint16_t ui16_value);
 
 static void check_system(void);
 static void throttle_read(void);
@@ -337,11 +341,13 @@ static void ebike_control_motor(void)
   if(ui8_m_motor_enabled)
   {
     // finally set the target battery current to the battery current controller
-    ebike_app_set_target_adc_battery_max_current(ui16_m_adc_battery_target_current);
+    ebike_app_set_target_adc_battery_max_current(ui16_m_adc_battery_current_max);
+    ebike_app_set_target_adc_motor_max_current(ui16_m_adc_battery_target_current);
   }
   else
   {
     ebike_app_set_target_adc_battery_max_current(0);
+    ebike_app_set_target_adc_motor_max_current(0);
     ui8_g_duty_cycle = 0;
   }
 
@@ -573,6 +579,9 @@ ui8_tx_buffer[7] = (uint8_t) (ui16_temp >> 8);
       // battery max current
       ebike_app_set_battery_max_current(ui8_rx_buffer[8]);
 
+      // set here but should be done in future from a value sent by the display
+      ebike_app_set_motor_max_current(ADC_MOTOR_CURRENT_MAX);
+
       m_config_vars.ui8_startup_motor_power_boost_feature_enabled = ui8_rx_buffer[9] & 1;
       m_config_vars.ui8_startup_motor_power_boost_always = (ui8_rx_buffer[9] & 2) >> 1;
       m_config_vars.ui8_startup_motor_power_boost_limit_to_max_power = (ui8_rx_buffer[9] & 4) >> 2;
@@ -696,6 +705,19 @@ static void ebike_app_set_target_adc_battery_max_current(uint16_t ui16_value)
   ui16_g_adc_target_battery_max_current = ui16_g_adc_battery_current_offset + ui16_value;
 }
 
+// each 1 unit = 0.156 amps
+static void ebike_app_set_target_adc_motor_max_current(uint16_t ui16_value)
+{
+  // limit max
+  if (ui16_value > ui16_m_adc_motor_current_max)
+  {
+    ui16_value = ui16_m_adc_motor_current_max;
+  }
+
+  ui16_g_adc_target_motor_max_current = ui16_g_adc_motor_current_offset + ui16_value;
+}
+
+
 // in amps
 static void ebike_app_set_battery_max_current(uint8_t ui8_value)
 {
@@ -705,6 +727,18 @@ static void ebike_app_set_battery_max_current(uint8_t ui8_value)
   if (ui16_m_adc_battery_current_max > ADC_BATTERY_CURRENT_MAX)
   {
     ui16_m_adc_battery_current_max = ADC_BATTERY_CURRENT_MAX;
+  }
+}
+
+// in amps
+static void ebike_app_set_motor_max_current(uint8_t ui8_value)
+{
+  // each 1 unit = 0.156 amps (0.156 * 256 = 40)
+  ui16_m_adc_motor_current_max = ((((uint16_t) ui8_value) << 8) / 40);
+
+  if (ui16_m_adc_motor_current_max > ADC_MOTOR_CURRENT_MAX)
+  {
+    ui16_m_adc_motor_current_max = ADC_MOTOR_CURRENT_MAX;
   }
 }
 

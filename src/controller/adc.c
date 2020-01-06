@@ -70,7 +70,7 @@ void adc_init (void)
     ui16_adc_battery_current_offset += UI16_ADC_10_BIT_BATTERY_CURRENT;
   }
   ui16_g_adc_battery_current_offset =
-      ui16_g_adc_motor_phase_current_offset =
+      ui16_g_adc_motor_current_offset =
           ui16_adc_battery_current_offset >> 4;
 
   // read and average a few values of ADC torque sensor

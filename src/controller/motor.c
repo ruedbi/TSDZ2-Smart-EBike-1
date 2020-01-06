@@ -387,8 +387,10 @@ uint8_t ui8_phase_b_voltage;
 uint8_t ui8_phase_c_voltage;
 uint16_t ui16_value;
 
-uint16_t ui16_counter_adc_battery_current_ramp_up = 0;
-uint16_t ui16_controller_adc_battery_max_current = 0;
+//uint16_t ui16_counter_adc_battery_current_ramp_up = 0;
+//uint16_t ui16_controller_adc_battery_max_current = 0;
+uint16_t ui16_counter_adc_motor_current_ramp_up = 0;
+uint16_t ui16_controller_adc_motor_max_current = 0;
 
 uint8_t ui8_first_time_run_flag = 1;
 
@@ -409,8 +411,8 @@ volatile uint16_t ui16_g_adc_motor_current;
 uint8_t ui8_battery_current_controller_cnt = 0;
 uint8_t ui8_motor_current_controller_cnt = 0;
 
-volatile uint16_t ui16_adc_target_motor_phase_max_current;
-volatile uint16_t ui16_g_adc_motor_phase_current_offset;
+volatile uint16_t ui16_adc_target_motor_max_current;
+volatile uint16_t ui16_g_adc_motor_current_offset;
 
 uint8_t ui8_pas_state;
 uint8_t ui8_pas_state_old;
@@ -645,7 +647,8 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER)
     ui8_motor_current_controller_cnt = 0;
     
     // if motor phase current is too much, reduce duty cycle
-    if (ui16_g_adc_motor_current > ui16_adc_target_motor_phase_max_current)
+//    if (ui16_g_adc_motor_current > ui16_adc_target_motor_max_current)
+    if (ui16_g_adc_motor_current > ui16_controller_adc_motor_max_current)
     {
       if(ui8_g_duty_cycle > 0)
         --ui8_g_duty_cycle;
@@ -657,7 +660,8 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER)
     ui8_battery_current_controller_cnt = 0;
 
     // if battery max current or phase current is too much, reduce duty cycle
-    if(ui16_g_adc_battery_current > ui16_controller_adc_battery_max_current)
+//    if(ui16_g_adc_battery_current > ui16_controller_adc_battery_max_current)
+    if(ui16_g_adc_battery_current > ui16_g_adc_target_battery_max_current)
     {
       if (ui8_g_duty_cycle > 0)
         --ui8_g_duty_cycle;
@@ -757,22 +761,40 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER)
   TIM1->CCR1L = (uint8_t) (ui8_phase_a_voltage << 1);
 
   /****************************************************************************/
+//  // ramp up ADC battery current
+//  if (ui16_g_adc_target_battery_max_current > ui16_controller_adc_battery_max_current)
+//  {
+//    if (ui16_counter_adc_battery_current_ramp_up++ >= ui16_g_current_ramp_up_inverse_step)
+//    {
+//      // reset counter
+//      ui16_counter_adc_battery_current_ramp_up = 0;
+//
+//      // increment current
+//      ui16_controller_adc_battery_max_current++;
+//    }
+//  }
+//  else if (ui16_g_adc_target_battery_max_current < ui16_controller_adc_battery_max_current)
+//  {
+//    // we are not doing a ramp down here, just directly setting to the target value
+//    ui16_controller_adc_battery_max_current = ui16_g_adc_target_battery_max_current;
+//  }
+
   // ramp up ADC battery current
-  if (ui16_g_adc_target_battery_max_current > ui16_controller_adc_battery_max_current)
+  if (ui16_g_adc_target_motor_max_current > ui16_controller_adc_motor_max_current)
   {
-    if (ui16_counter_adc_battery_current_ramp_up++ >= ui16_g_current_ramp_up_inverse_step)
+    if (++ui16_counter_adc_motor_current_ramp_up >= ui16_g_current_ramp_up_inverse_step)
     {
       // reset counter
-      ui16_counter_adc_battery_current_ramp_up = 0;
+      ui16_counter_adc_motor_current_ramp_up = 0;
       
       // increment current
-      ui16_controller_adc_battery_max_current++;
+      ++ui16_controller_adc_motor_max_current;
     }
   }
-  else if (ui16_g_adc_target_battery_max_current < ui16_controller_adc_battery_max_current)
+  else if (ui16_g_adc_target_motor_max_current < ui16_controller_adc_motor_max_current)
   {
     // we are not doing a ramp down here, just directly setting to the target value
-    ui16_controller_adc_battery_max_current = ui16_g_adc_target_battery_max_current;
+    ui16_controller_adc_motor_max_current = ui16_g_adc_target_motor_max_current;
   }
   
   /****************************************************************************/
@@ -1056,7 +1078,6 @@ void motor_init(void)
 {
   motor_set_pwm_duty_cycle_ramp_up_inverse_step(PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP); // each step = 64us
   motor_set_pwm_duty_cycle_ramp_down_inverse_step(PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP); // each step = 64us
-  motor_set_phase_current_max(ADC_MOTOR_PHASE_CURRENT_MAX);
 }
 
 void motor_set_pwm_duty_cycle_target(uint8_t ui8_value)
@@ -1081,7 +1102,7 @@ void motor_set_pwm_duty_cycle_ramp_down_inverse_step (uint16_t ui16_value)
 
 void motor_set_phase_current_max(uint16_t ui16_value)
 {
-  ui16_adc_target_motor_phase_max_current = ui16_g_adc_motor_phase_current_offset + ui16_value;
+  ui16_adc_target_motor_max_current = ui16_g_adc_motor_current_offset + ui16_value;
 }
 
 uint16_t ui16_motor_get_motor_speed_erps(void)
