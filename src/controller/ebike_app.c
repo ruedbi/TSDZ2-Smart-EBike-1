@@ -42,7 +42,8 @@ volatile uint8_t ui8_system_state = ERROR_NO_CONFIGURATIONS; // start with syste
 volatile uint16_t ui16_pas_pwm_cycles_ticks = (uint16_t) PAS_ABSOLUTE_MIN_CADENCE_PWM_CYCLE_TICKS;
 volatile uint8_t ui8_g_pedaling_direction = 0;
 uint8_t   ui8_pas_cadence_rpm = 0;
-uint16_t  ui16_m_pedal_torque_x10;
+uint16_t ui16_m_pedal_torque_x10;
+uint16_t ui16_pedal_torque_x100;
 uint16_t  ui16_m_pedal_power_x10;
 uint16_t  ui16_m_pedal_power_max_x10;
 uint8_t   ui8_m_pedal_human_power = 0;
@@ -205,8 +206,18 @@ static void ebike_control_motor(void)
     {
       if (m_config_vars.ui8_motor_assistance_startup_without_pedal_rotation == 0)
       {
-        ui32_temp = (uint32_t) ui16_m_pedal_power_x10 * (uint32_t) m_config_vars.ui8_assist_level_factor_x10;
-        ui32_temp /= 100;
+        if (ui8_pas_cadence_rpm)
+        {
+          ui32_temp = (uint32_t) ui16_m_pedal_power_x10 * (uint32_t) m_config_vars.ui8_assist_level_factor_x10;
+          ui32_temp /= 100;
+        }
+        else
+        {
+          // consider that cadence is 10 RPM that is the min value the system can start to measure of cadence
+          ui32_temp = ((uint32_t) ui16_pedal_torque_x100 * (uint32_t) 10) / (uint32_t) 96; // humman pedal power
+          ui32_temp = (uint32_t) ui32_temp * (uint32_t) m_config_vars.ui8_assist_level_factor_x10;
+          ui32_temp /= 100;
+        }
       }
       else
       {
@@ -256,9 +267,9 @@ static void ebike_control_motor(void)
 
   ui8_tmp_pas_cadence_rpm = ui8_pas_cadence_rpm;
   // let's cheat next value, only to cheat apply_boost()
-  if(m_config_vars.ui8_motor_assistance_startup_without_pedal_rotation)
+  if (m_config_vars.ui8_motor_assistance_startup_without_pedal_rotation)
   {
-    if(ui8_pas_cadence_rpm < 10) { ui8_tmp_pas_cadence_rpm = 10; }
+    if (ui8_pas_cadence_rpm < 10) { ui8_tmp_pas_cadence_rpm = 10; }
   }
 
   // apply boost and boost fade out
@@ -814,8 +825,6 @@ static void linearize_torque_sensor_to_kgs(uint16_t *ui16_adc_steps, uint16_t *u
 
 static void calc_pedal_force_and_torque(void)
 {
-  uint16_t ui16_pedal_torque_x100;
-
   // calculate power on pedals
   // formula for angular velocity in degrees: power  =  force  *  rotations per second  *  2  *  pi
   // formula for angular velocity in degrees: power  =  (force  *  rotations per minute  *  2  *  pi) / 60

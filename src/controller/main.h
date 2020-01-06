@@ -122,25 +122,8 @@
 #define WHEEL_SPEED_SENSOR_MAX_PWM_CYCLE_TICKS                    135   // something like 200 m/h with a 6'' wheel
 #define WHEEL_SPEED_SENSOR_MIN_PWM_CYCLE_TICKS                    32767 // could be a bigger number but will make for a slow detection of stopped wheel speed
 
-
-
-// EEPROM memory variables default values
-#define DEFAULT_VALUE_ASSIST_LEVEL_FACTOR_X10                     40  // 4.0
-#define DEFAULT_VALUE_CONFIG_0                                    0
-#define DEFAULT_VALUE_BATTERY_MAX_CURRENT                         10  // 10 amps
-#define DEFAULT_VALUE_TARGET_BATTERY_MAX_POWER_X10                50  // 500 watts
-#define DEFAULT_VALUE_BATTERY_LOW_VOLTAGE_CUT_OFF_X10_0           134 // 48 V battery, LVC = 39.0 (3.0 * 13): (134 + (1 << 8)) = 390
-#define DEFAULT_VALUE_BATTERY_LOW_VOLTAGE_CUT_OFF_X10_1           1
-#define DEFAULT_VALUE_WHEEL_PERIMETER_0                           2   // 26'' wheel: 2050 mm perimeter (2 + (8 << 8))
-#define DEFAULT_VALUE_WHEEL_PERIMETER_1                           8
-#define DEFAULT_VALUE_WHEEL_MAX_SPEED                             50  // 50 km/h
-#define DEFAULT_VALUE_CONFIG_1                                    0
-
-
-
 // default values for ramp up
 #define DEFAULT_VALUE_RAMP_UP_AMPS_PER_SECOND_X10                 50  // 5.0 amps per second ramp up
-
 
 // ADC battery voltage measurement
 #define ADC10BITS_BATTERY_VOLTAGE_PER_ADC_STEP_X512               44
