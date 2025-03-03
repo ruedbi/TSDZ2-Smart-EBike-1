@@ -1,0 +1,17 @@
+# Format Style Options - Created with Clang Power Tools
+---
+BasedOnStyle: WebKit
+AllowShortCaseLabelsOnASingleLine: true
+BreakBeforeBinaryOperators: None
+BreakBeforeBraces: Attach
+ColumnLimit: 250
+ContinuationIndentWidth: 2
+Cpp11BracedListStyle: true
+ExperimentalAutoDetectBinPacking: true
+IncludeBlocks: Regroup
+ReflowComments: false
+SortIncludes: false
+SpaceBeforeInheritanceColon: false
+TabWidth: 4
+UseTab: Always
+...

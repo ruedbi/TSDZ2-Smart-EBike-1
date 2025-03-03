@@ -12,7 +12,9 @@
 #include <stdint.h>
 
 // riding modes
-#define OFF_MODE                                  0
+// ruedbi: should be an enum ...
+// off mode would create illegale array access - removed
+// #define OFF_MODE                                  0
 #define POWER_ASSIST_MODE                         1
 #define TORQUE_ASSIST_MODE                        2
 #define CADENCE_ASSIST_MODE                       3
@@ -39,5 +41,11 @@ uint8_t ui8_max(uint8_t value_a, uint8_t value_b);
 uint8_t ui8_min(uint8_t value_a, uint8_t value_b);
 uint16_t filter(uint16_t ui16_new_value, uint16_t ui16_old_value, uint8_t ui8_alpha);
 void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
+
+#if ENABLE_VLCD6
+#define ENABLE_EKD01 1
+#undef ENABLE_VLCD6
+#define ENABLE_VLCD6 0
+#endif
 
 #endif /* COMMON_COMMON_H_ */

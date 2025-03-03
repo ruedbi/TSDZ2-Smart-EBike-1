@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-version="20.1C.6-0"
-settings_date=$1
+version="v1_0_mtb_ruedbi_26_ekd01"
+settings_date=$(date +"%Y%m%d_%H%M%S")
 
 release_folder=$(pwd)/releases
 backup_folder=$(pwd)/releases/backup
@@ -11,7 +11,7 @@ cd src
 
 # Clean existing
 rm -rf main.hex || true
-make clean || true
+# make clean || true
 
 # Build firmware
 echo Build started...
@@ -22,6 +22,8 @@ echo Copying firmware to release folder.
 echo $release_folder/TSDZ2-$version-$settings_date.hex
 mkdir -p "$release_folder"
 yes | cp -rf ../bin/main.hex "$release_folder/TSDZ2-$version-$settings_date.hex"
+
+exit 0
 
 backup=no
 while true; do

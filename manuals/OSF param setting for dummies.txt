@@ -1,0 +1,34 @@
+OSF Parameter settings for Dummies - notes from a Newbie
+
+The parameter setting concept is confusing at first.
+Things to mention:
+- The setting is done by hijacking the "lights" key.
+- The key works one-way only, from the display to the controller, and after initiating the settings mode by switching on, the controller only cares for status changes.
+- Any setting is binary, and most of the time it is a toggle: disable to enable of vice versa; so there is e.g. no adjustment of a speed limit from 25 to 30 or something.
+- Do not get confused if the display reacts with dimming on the lights-key action (depends on the display and the setting), especially that "lights on" means "display dim", rather understand it as a action confirmation.
+
+How it works (concept idea)
+Imagine you go to your dentist (switch light on). 
+You sit in the chair, having your moth full of eqipment and the only thing you can say is "mmmh" (light toggle).
+Then the dentist (controller) tells you: You know last time I treated you like so?
+You: mmmh
+Dentist: Now there is a new treatment: Do you accept or reject it (and get the old one)?
+Now how do you answer? You know that the dentist's time is limited so the protocol is like so:
+You wait till the dentist times out (no mmmh) - means you accept
+You mmmh before the timeout - means you reject
+After an (any) accept the procedure ends, but upon a reject the dentist keeps asking up to 2 more questions giving you a new choice.
+That's it
+
+As with any dentist 2 more rules apply:
+- The offer is fixed
+- No matter if you like or don't like the procedure - you have to live with it :-)
+
+
+If you compile the code yourself, I recommend these settings until you are familiar with it:
+advanced - time to menu items: 100 - this gives you more time (10s) to react before the controller times out (see below); can be larger than 60 as indicated in the tool
+advanced - number of data displayed at lights on: 1
+advanced - data 1: 1
+advanced - time to displayed data 1: 10
+the latter 3 settings make the battery level appear for 1s, when configuration exits; so when you see e.g. 99 (%) when battery is full, you know you are no longer in config mode
+
+
