@@ -199,8 +199,10 @@ static uint8_t ui8_motor_temperature_min_value_to_limit_array[2] = {MOTOR_TEMPER
 
 // UART
 volatile uint8_t ui8_received_package_flag = 0;
+// ruedbi: here the display data received are stored
 volatile uint8_t ui8_rx_buffer[UART_RX_BUFFER_LEN];
 volatile uint8_t ui8_rx_counter = 0;
+// ruedbi: here the display data to be sent are stored
 volatile uint8_t ui8_tx_buffer[UART_TX_BUFFER_LEN];
 volatile uint8_t ui8_byte_received;
 volatile uint8_t ui8_state_machine = 0;
@@ -2764,6 +2766,14 @@ static void uart_receive_package(void)
 }
 
 
+/** ruedbi
+ * @brief Sends display data as a package over UART.
+ * my displays: DZ40 mini, EKD01
+ *
+ * This function is responsible for transmitting a data package 
+ * through the UART interface. It prepares the data and handles 
+ * the communication protocol to ensure the package is sent correctly.
+ */
 static void uart_send_package(void)
 {
 	uint8_t ui8_i;
