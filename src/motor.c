@@ -215,6 +215,17 @@ static uint16_t ui16_c;
 
 static uint8_t ui8_temp;
 
+/**
+ * @brief Interrupt handler for TIM1 capture/compare events.
+ *
+ * This function is the interrupt service routine (ISR) for handling
+ * capture/compare events on TIM1. It is triggered when a capture/compare
+ * event occurs on TIM1, allowing the program to respond to these events.
+ *
+ * @note This function is marked with the __interrupt keyword to indicate
+ *       that it is an interrupt handler for the TIM1 capture/compare
+ *       interrupt.
+ */
 void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER)
 {
     // bit 5 of TIM1->CR1 contains counter direction (0=up, 1=down)
