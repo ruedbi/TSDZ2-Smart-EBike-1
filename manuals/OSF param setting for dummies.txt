@@ -1,0 +1,17 @@
+OSF Parameter settings for Dummies - notes from a Newbie
+
+The parameter setting concept is confusing at first.
+Things to mention:
+- The setting is done by hijacking the "lights" key.
+- The key works one-way only, from the display to the controller.
+- Any setting is binary, and most of the time it is a toggle: disable to enable of vice versa; so there is e.g. no adjustment of a speed limit from 25 to 30 or something.
+- Do not get confused if the display reacts with dimming on the lights-key action (depends on the display and the setting), especially that "lights on" means "display dim", rather understand it as a action confirmation.
+
+If you compile the code yourself, I recommend these settings:
+advanced - time to menu items: 100 - this gives you more time to react before the controller times out (see below)
+advanced - number of data displayed at lights on: 1
+advanced - data 1: 1
+advanced - time to displayed data 1: 10
+the latter 3 settings make the battery level appear, when configuration exits; so when you see e.g. 99 (%) for 1s (battery full), you know you are no longer in config mode
+
+
