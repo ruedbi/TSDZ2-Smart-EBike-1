@@ -590,7 +590,7 @@ public class TSDZ2_Configurator extends javax.swing.JFrame {
                 LB_LAST_COMMIT.setText("<html>" + br.readLine() + "</html>");
                 br.close();
             } catch (IOException ex) {
-                JOptionPane.showMessageDialog(null, "ommits.txt file not found" , "TSDZ2 Patameter Configurator", JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(null, "commits.txt file not found" , "TSDZ2 Patameter Configurator", JOptionPane.INFORMATION_MESSAGE);
             }
     }
 
@@ -1482,11 +1482,11 @@ public class TSDZ2_Configurator extends javax.swing.JFrame {
                 iWriter.println(RB_BOOST_AT_ZERO_SPEED.isSelected());
 
                 if (JCB_DISPLAY_TYPE.getSelectedIndex() == C850) {
-                    text_to_save = "#define ENABLEC850 1";
+                    text_to_save = "#define ENABLE_850C 1";
                     pWriter.println(text_to_save);
                 }
                 else {
-                    text_to_save = "#define ENABLEC850 0";
+                    text_to_save = "#define ENABLE_850C 0";
                     pWriter.println(text_to_save);
                 }
                 iWriter.println(boolDisplayType850C);
@@ -1979,7 +1979,7 @@ public class TSDZ2_Configurator extends javax.swing.JFrame {
         jRadioButton1.setText("jRadioButton1");
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
-        setTitle("TSDZ2 Parameter Configurator 5.1 for Open Source Firmware v20.1C.6");
+        setTitle("TSDZ2 Parameter Configurator 850C-fix for Open Source Firmware v20.1C.6");
         setResizable(false);
         setSize(new java.awt.Dimension(1192, 608));
 
