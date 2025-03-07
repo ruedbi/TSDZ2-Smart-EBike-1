@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 // riding modes
+// ruedbi: should be an enum ...
 #define OFF_MODE                                  0
 #define POWER_ASSIST_MODE                         1
 #define TORQUE_ASSIST_MODE                        2

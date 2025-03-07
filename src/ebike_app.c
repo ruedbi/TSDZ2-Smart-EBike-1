@@ -112,21 +112,25 @@ static uint8_t ui8_assist_level_01_flag = 0;
 static uint8_t ui8_riding_mode_temp = 0;
 static uint8_t ui8_lights_flag = 0;
 static uint8_t ui8_lights_on_5s = 0;
-static uint8_t ui8_menu_flag = 0;
-static uint8_t ui8_menu_index = 0;
+static uint8_t ui8_menu_flag = 0;   // @brief: set to 1, when menu is on
+static uint8_t ui8_menu_index = 0;  // if >0: mimics the menu's "error code" -1 (!)
 static uint8_t ui8_data_index = 0;
 static uint8_t ui8_menu_counter = 0;
-static uint8_t ui8_display_function_code = 0;
+// note: the presence of an error makes the display show the error code, overwriting any speed/menu
+// value, unless the display has a dedicated error code field (XH18)
+static uint8_t ui8_display_function_code = 0;  // if >0: menu "error code" ((E)2,3,4)
 static uint8_t ui8_display_function_code_temp = 0;
 static uint8_t ui8_menu_function_enabled = 0;
-static uint8_t ui8_display_data_enabled = 0;
+static uint8_t ui8_display_data_enabled = 0;  // set to 1 if menu-data shall be displayed
 static uint16_t ui16_display_data = 0;
 static uint16_t ui16_data_value = 0;
 static uint8_t ui8_auto_display_data_flag = 0;
 static uint8_t ui8_auto_display_data_status = 0;
 static uint8_t ui8_auto_data_number_display = AUTO_DATA_NUMBER_DISPLAY;
 static uint16_t ui16_display_data_factor = 0;
-static uint8_t ui8_delay_display_function = DELAY_MENU_ON;
+// timeout value in seconds; e.g. for config mode:
+static uint8_t ui8_delay_display_function =
+        DELAY_MENU_ON;  
 static uint8_t ui8_display_data_on_startup = DATA_DISPLAY_ON_STARTUP;
 static uint8_t ui8_set_parameter_enabled_temp = ENABLE_SET_PARAMETER_ON_STARTUP;
 static uint8_t ui8_auto_display_data_enabled_temp = ENABLE_AUTO_DATA_DISPLAY;
@@ -135,7 +139,9 @@ static uint8_t ui8_torque_sensor_adv_enabled_temp = TORQUE_SENSOR_ADV_ON_STARTUP
 static uint8_t ui8_assist_without_pedal_rotation_temp = MOTOR_ASSISTANCE_WITHOUT_PEDAL_ROTATION;
 static uint8_t ui8_walk_assist_enabled_array[2] = {ENABLE_WALK_ASSIST, STREET_MODE_WALK_ENABLED};
 static uint8_t ui8_display_battery_soc_flag = 0;
-static uint8_t ui8_display_riding_mode = 0;
+// the selected riding mode, as POWER_ASSIST_MODE ...; somewhat redundant with
+            // m_configuration_variables.ui8_riding_mode
+			static uint8_t ui8_display_riding_mode =       0;  
 static uint8_t ui8_display_lights_configuration = 0;
 static uint8_t ui8_display_alternative_lights_configuration = 0;
 static uint8_t ui8_display_torque_sensor_flag_1 = 0;
@@ -153,8 +159,8 @@ volatile uint8_t ui8_system_state = NO_ERROR;
 volatile uint8_t ui8_motor_enabled = 1;
 static uint8_t ui8_assist_without_pedal_rotation_threshold =
         ASSISTANCE_WITHOUT_PEDAL_ROTATION_THRESHOLD;
-static uint8_t ui8_lights_state = 0;
-static uint8_t ui8_lights_button_flag = 0;  // set as requested by display
+static uint8_t ui8_lights_state = 0;  // how the controller really sets the lights: 0 = off, 1 = on
+static uint8_t ui8_lights_button_flag = 0;  // set to the lights status requested by display
 static uint8_t ui8_field_weakening_erps_delta = 0;
 static uint8_t ui8_optional_ADC_function = OPTIONAL_ADC_FUNCTION;
 static uint8_t ui8_walk_assist_level = 0;
@@ -309,7 +315,7 @@ volatile uint8_t ui8_state_machine = 0;
 volatile uint8_t ui8_working_status = 0;
 volatile uint8_t ui8_display_fault_code = 0;
 
-// array for oem display
+// array for oem display, holds the data types 0..12 that can be chosen
 static uint8_t ui8_data_index_array[DATA_INDEX_ARRAY_DIM] = {DISPLAY_DATA_1,
                                                              DISPLAY_DATA_2,
                                                              DISPLAY_DATA_3,
@@ -2438,7 +2444,7 @@ void UART2_IRQHandler(void) __interrupt(UART2_IRQHANDLER) {
 Example message:
 
 59 40 00 1C 00 1B D0
-Send frequency: 15 per second
+Send frequency: 10 (15?) per second - this is used as a time base
 
 Content:
 
@@ -2529,7 +2535,7 @@ static void uart_receive_package(void) {
     uint8_t ui8_rx_check_code;
     uint8_t ui8_assist_level_mask;
     static uint8_t no_rx_counter = 0;
-    static uint8_t ui8_lights_counter = 0;
+    static uint8_t ui8_lights_counter = 0;  // incr. on every uart_receive_package call @ 1/10s (?)
     static uint8_t ui8_walk_assist_debounce_flag = 0;
     static uint8_t ui8_walk_assist_debounce_counter = 0;
     static uint8_t ui8_walk_assist_button_pressed = 0;
@@ -2541,7 +2547,7 @@ static void uart_receive_package(void) {
     // increment lights_counter
     ui8_lights_counter++;
     // increment display menu counter
-    ui8_menu_counter++;
+    ui8_menu_counter++;  // count up at 100ms
 
     if (ui8_received_package_flag) {
         // verify check code of the package
@@ -2597,6 +2603,7 @@ static void uart_receive_package(void) {
             ui8_display_ready_flag = 1;
 
             // display lights button pressed:
+            // ruedbi: this is the part where data are restored after "reject" by the user
             if (ui8_lights_button_flag) {
                 // lights off:
                 if ((!ui8_lights_flag)
@@ -2612,7 +2619,7 @@ static void uart_receive_package(void) {
                         // set menu flag
                         ui8_menu_flag = 1;
 
-                        // set menu index
+                        // set the new / next menu index:
                         if (++ui8_menu_index > 3) {
                             ui8_menu_index = 3;
                         }
@@ -2746,6 +2753,8 @@ static void uart_receive_package(void) {
                         // clear menu counter
                         ui8_menu_counter = ui8_delay_display_function;
                         // clear lights counter
+                        // ruedbi: this may be a bug, it should be 0
+                        // as it only limits the counter - check
                         ui8_lights_counter = DELAY_LIGHTS_ON;
                         // display function code disabled
                         ui8_display_function_code = NO_FUNCTION;
@@ -2807,6 +2816,7 @@ static void uart_receive_package(void) {
             }
 
             // display menu function
+            // ruedbi: this is the part where data are changed after "accepted" by the user
             if (ui8_menu_function_enabled) {
                 // display status lights configuration
                 ui8_display_alternative_lights_configuration = 0;
@@ -3024,9 +3034,10 @@ static void uart_receive_package(void) {
 // display function status VLCD5/6
 #if ENABLE_VLCD5 || ENABLE_VLCD6
             if (ui8_menu_flag) {
-                if (ui8_menu_counter >= DELAY_FUNCTION_STATUS)
+                if (ui8_menu_counter >= DELAY_FUNCTION_STATUS) {
                     // display function code disabled
                     ui8_display_function_code = NO_FUNCTION;
+                }
             } else {
                 if ((ui8_menu_counter > (DELAY_MENU_ON - DELAY_FUNCTION_STATUS))
                     && (ui8_menu_counter < DELAY_MENU_ON) && (ui8_menu_index > 0U)) {
@@ -3037,6 +3048,8 @@ static void uart_receive_package(void) {
                     ui8_display_function_code = NO_FUNCTION;
                 }
             }
+#elif ENABLE_850C
+// rbien check
 #endif
 
             // menu function disabled
@@ -3080,6 +3093,8 @@ static void uart_receive_package(void) {
 #if ENABLE_VLCD5 || ENABLE_VLCD6
                     // display function code disabled
                     ui8_display_function_code = NO_FUNCTION;
+#elif ENABLE_850C
+                    // rbien check
 #endif
                 }
                 break;
@@ -3411,7 +3426,7 @@ static void uart_send_package(void) {
             ui8_display_fault_code = ERROR_OVERVOLTAGE;  // Fault overvoltage
             break;
         }
-#else  // ENABLE_VLCD5 or 850C
+#else  // ENABLE_VLCD5 or ENABLE_850C
         switch (ui8_battery_state_of_charge) {
         case 0:
             ui8_working_status |= 0x01;  // bit0 = 1 (battery undervoltage)
@@ -3464,6 +3479,7 @@ static void uart_send_package(void) {
                 filter(ui16_battery_power_x10, ui16_battery_power_filtered_x10, 8);
         ui8_tx_buffer[4] = (uint8_t)(ui16_battery_power_filtered_x10 / 100);
 #else
+        // rbien: set to 0 (?) for now:
         ui8_tx_buffer[3] = 0x46;
         ui8_tx_buffer[4] = 0x46;
 #endif
@@ -3499,6 +3515,7 @@ static void uart_send_package(void) {
 
         // send to display function code or fault code
         if ((ui8_display_fault_code != NO_FAULT) && (ui8_display_function_code == NO_FUNCTION)) {
+            // ruedbi: This is the handling of real errors: they are displayed as blinking codes
             // from the manual:
             // With XH18, code and status are in two different fields and therefore are displayed
             // simultaneously.
@@ -3539,11 +3556,12 @@ static void uart_send_package(void) {
                 // fault code
                 ui8_tx_buffer[5] = ui8_display_fault_code;
             }
-#else  // 850C
+#else  // ENABLE_850C
        // fault code
             ui8_tx_buffer[5] = ui8_display_fault_code;
 #endif
         } else if (ui8_display_function_code != NO_FUNCTION) {
+            // ruedbi: this is the handling of the menu function codes displayed as error codes
             // function code
             if ((!ui8_menu_flag) && (ui8_menu_index > 0U)
                 && ((m_configuration_variables.ui8_set_parameter_enabled)
@@ -3565,13 +3583,15 @@ static void uart_send_package(void) {
             ui8_tx_buffer[5] = CLEAR_DISPLAY;
         }
 
-        // send to display data value or wheel speed
+        // send to display (menu) data value or wheel speed
         if (ui8_display_data_enabled) {
+            // ruedbi: here is preparation of all non-speed data to be sent to the display via
+            // ui16_display_data; they are scaled accodingly
             // display data
-            // The maximum speed value displayable on the display is 99.9, and is always sent in
-            // km/h. By setting mph, it is the display that converts it, so the maximum displayable
-            // value becomes 62.4 (99.9/1.6), Data that can exceed this value is best always divided
-            // by 10.
+            // The maximum speed value
+            // displayable on the display is 99.9, and is always sent in km/h. By setting mph, it is
+            // the display that converts it, so the maximum displayable value becomes 62.4
+            // (99.9/1.6), Data that can exceed this value is best always divided by 10.
             if ((ui8_display_battery_soc_flag)
                 || ((ui8_startup_counter < DELAY_MENU_ON) && (ui8_assist_level == TURBO))) {
 #if UNITS_TYPE == MILES
@@ -3582,6 +3602,7 @@ static void uart_send_package(void) {
             } else if (
                     (ui8_display_data_on_startup) && (ui8_startup_counter < DELAY_MENU_ON)
                     && (ui8_assist_level != TURBO) && (ui8_menu_index == 0U)) {
+                // ruedbi: this here is normal operation mode / non-config mode:
                 switch (ui8_display_data_on_startup) {
                 case 1:
 #if UNITS_TYPE == MILES
@@ -3612,10 +3633,12 @@ static void uart_send_package(void) {
                 ui16_display_data = ui16_display_data_factor / ui16_adc_torque;
             } else if (
                     (ui8_menu_counter <= ui8_delay_display_function) && (ui8_menu_index > 0U)
-                    && ((ui8_assist_level < 2)
+                    && ((ui8_assist_level < TOUR)
                         || (ui8_display_alternative_lights_configuration))) {  // OFF & ECO &
                                                                                // alternative lights
                                                                                // configuration
+                // ruedbi: this is the scaling for menu modes 0,1 (OFF,ECO) or altern. lights, which
+                // scale to 10 (enable) or 00 (disable):
                 uint8_t index_temp =
                         (ui8_display_function_status[ui8_menu_index - 1][ui8_assist_level]);
                 switch (index_temp) {
@@ -3631,9 +3654,13 @@ static void uart_send_package(void) {
             } else if (
                     (ui8_menu_counter <= ui8_delay_display_function) && (ui8_menu_index > 0U)
                     && (ui8_assist_level == TURBO)) {
+                // ruedbi: this is the scaling for menu mode 4 / turbo mode,
+                // which also scales to 10 (enable) or 00 (disable), but
+                // based on ui8_display_lights_configuration
                 ui16_display_data = ui16_display_data_factor
                         / (ui8_display_lights_configuration * (uint8_t)100 + DISPLAY_STATUS_OFFSET);
             } else if ((ui8_menu_counter <= ui8_delay_display_function) && (ui8_menu_index > 0U)) {
+                // ruedbi: this is the scaling for menu modes 2,3 (TOUR,SPORT):
                 ui16_display_data = ui16_display_data_factor
                         / (ui8_display_riding_mode * (uint8_t)100 + DISPLAY_STATUS_OFFSET);
             } else {
@@ -3925,7 +3952,7 @@ static void check_battery_soc(void) {
     else {
         ui8_battery_state_of_charge = 0;
     }  // undervoltage
-#else  // ENABLE_VLCD5 or 850C
+#else  // ENABLE_VLCD5 or ENABLE_850C
     if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_8_X10) {
         ui8_battery_state_of_charge = 9;
     }  // overvoltage
@@ -4071,7 +4098,7 @@ uint16_t read_battery_soc(void) {
         ui16_battery_SOC_calc_x10 = 1000;
         break;  // overvoltage
     }
-#else  // ENABLE_VLCD5 or 850C
+#else  // ENABLE_VLCD5 or ENABLE_850C
     switch (ui8_battery_state_of_charge) {
     case 0:
         ui16_battery_SOC_calc_x10 = 10;
