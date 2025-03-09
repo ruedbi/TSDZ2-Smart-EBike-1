@@ -97,6 +97,11 @@
 #include "uart.h"
 #include <stdint.h>
 
+#if ENABLE_VLCD6
+#define ENABLE_EKD01 1
+#undef ENABLE_VLCD6
+#define ENABLE_VLCD6 0
+#endif
 
 /**
  * @brief Global variable to hold configuration settings for the e-bike application.
@@ -108,8 +113,8 @@ volatile struct_configuration_variables m_configuration_variables;
 // display menu
 static uint8_t ui8_assist_level = ECO;  // internal levels, mapped from display levels
 static uint8_t ui8_assist_level_temp = ECO;
-static uint8_t ui8_assist_level_01_flag = 0;
-static uint8_t ui8_riding_mode_temp = 0;
+static uint8_t ui8_assist_level_01_flag = 0; // ruedbi: this could be used to suppress config at level 5
+static uint8_t ui8_riding_mode_temp = 1;
 static uint8_t ui8_lights_flag = 0;
 static uint8_t ui8_lights_on_5s = 0;
 static uint8_t ui8_menu_flag = 0;   // @brief: set to 1, when menu is on
@@ -141,7 +146,7 @@ static uint8_t ui8_walk_assist_enabled_array[2] = {ENABLE_WALK_ASSIST, STREET_MO
 static uint8_t ui8_display_battery_soc_flag = 0;
 // the selected riding mode, as POWER_ASSIST_MODE ...; somewhat redundant with
             // m_configuration_variables.ui8_riding_mode
-			static uint8_t ui8_display_riding_mode =       0;  
+static uint8_t ui8_display_riding_mode = POWER_ASSIST_MODE;   // != 0 !!!
 static uint8_t ui8_display_lights_configuration = 0;
 static uint8_t ui8_display_alternative_lights_configuration = 0;
 static uint8_t ui8_display_torque_sensor_flag_1 = 0;
@@ -157,8 +162,7 @@ static uint8_t ui8_lights_configuration_temp = LIGHTS_CONFIGURATION_ON_STARTUP;
 static uint8_t ui8_riding_mode_parameter = 0;
 volatile uint8_t ui8_system_state = NO_ERROR;
 volatile uint8_t ui8_motor_enabled = 1;
-static uint8_t ui8_assist_without_pedal_rotation_threshold =
-        ASSISTANCE_WITHOUT_PEDAL_ROTATION_THRESHOLD;
+static uint8_t ui8_assist_without_pedal_rotation_threshold = ASSISTANCE_WITHOUT_PEDAL_ROTATION_THRESHOLD;
 static uint8_t ui8_lights_state = 0;  // how the controller really sets the lights: 0 = off, 1 = on
 static uint8_t ui8_lights_button_flag = 0;  // set to the lights status requested by display
 static uint8_t ui8_field_weakening_erps_delta = 0;
@@ -418,7 +422,7 @@ uint16_t calc_battery_soc_x10(
  */
 void ebike_app_init(void) {
 // minimum value for these displays
-#if ENABLE_VLCD6 || ENABLE_850C
+#if ENABLE_VLCD6 || ENABLE_850C || ENABLE_EKD01
     if (ui8_delay_display_function < 70) {
         ui8_delay_display_function = 70;
     }
@@ -719,23 +723,25 @@ static void ebike_control_motor(void) {
     // Check battery Over-current (read current here in case PWM interrupt for some error was
     // disabled) Read in assembler to ensure data consistency (conversion overrun) E07 (E04 blinking
     // for XH18)
-#if OVERCURRENT_DELAY > 0  // overcurrent error enabled
-#ifndef __CDT_PARSER__     // avoid Eclipse syntax check
-    __asm ld a,
-            0x53eb  // ADC1->DB5RL
-            cp a,
-            _ui8_adc_battery_overcurrent jrc 00011 $ mov _ui8_error_battery_overcurrent + 0,
-#ERROR_BATTERY_OVERCURRENT 00011 $ : __endasm;
-#endif
-            if (ui8_error_battery_overcurrent) {
-        ui8_error_battery_overcurrent_counter++;
-    }
-    else {
-        ui8_error_battery_overcurrent_counter = 0;
-    }
-    if (ui8_error_battery_overcurrent_counter >= OVERCURRENT_DELAY) {
-        ui8_system_state = ui8_error_battery_overcurrent;
-    }
+#if OVERCURRENT_DELAY > 0	// overcurrent error enabled
+	#ifndef __CDT_PARSER__	// avoid Eclipse syntax check
+	__asm
+		ld a, 0x53eb // ADC1->DB5RL
+		cp a, _ui8_adc_battery_overcurrent
+		jrc 00011$
+		mov _ui8_error_battery_overcurrent+0, #ERROR_BATTERY_OVERCURRENT
+	00011$:
+	__endasm;
+	#endif
+	if (ui8_error_battery_overcurrent) {
+		ui8_error_battery_overcurrent_counter++;
+	}
+	else {
+		ui8_error_battery_overcurrent_counter = 0;
+	}
+	if (ui8_error_battery_overcurrent_counter >= OVERCURRENT_DELAY) {
+		ui8_system_state = ui8_error_battery_overcurrent;
+	}
 #endif
 
     // reset control parameters if... (safety)
@@ -2188,17 +2194,16 @@ static void check_system(void) {
 }
 
 
-static uint8_t ui8_default_flash_state;
+static uint8_t ui8_default_flash_state; // used to control the flashing of the light
 
 void ebike_control_lights(void) {
-#define DEFAULT_FLASH_ON_COUNTER_MAX 3
+#define DEFAULT_FLASH_ON_COUNTER_MAX 5
 #define DEFAULT_FLASH_OFF_COUNTER_MAX 2
 #define BRAKING_FLASH_ON_COUNTER_MAX 1
 #define BRAKING_FLASH_OFF_COUNTER_MAX 1
 
-    // static uint8_t ui8_default_flash_state;
     static uint8_t ui8_default_flash_state_counter;  // increments every function call -> 100 ms
-    static uint8_t ui8_braking_flash_state;
+    static uint8_t ui8_braking_flash_state; // used to control the flashing of the brake light
     static uint8_t ui8_braking_flash_state_counter;  // increments every function call -> 100 ms
 
     /****************************************************************************/
@@ -2573,7 +2578,30 @@ static void uart_receive_package(void) {
             ui8_assist_level_01_flag = 0;
 
             // set assist level
-            switch (ui8_assist_level_mask) {
+#if ENABLE_EKD01
+			switch (ui8_assist_level_mask) {
+				case ASSIST_PEDAL_LEVEL0:
+					ui8_assist_level = OFF;
+					break;
+				case ASSIST_PEDAL_LEVEL01:
+					ui8_assist_level = ECO;
+					ui8_assist_level_01_flag = 1;
+					break;
+				case ASSIST_PEDAL_LEVEL1:
+					ui8_assist_level = TOUR;
+					break;
+				case ASSIST_PEDAL_LEVEL2:
+					ui8_assist_level = SPORT;
+					break;
+				case ASSIST_PEDAL_LEVEL3:
+					ui8_assist_level = TURBO;
+					break;
+				case ASSIST_PEDAL_LEVEL4:
+					ui8_assist_level = ECO;
+					break;
+				}
+	#else
+			switch (ui8_assist_level_mask) {
             case ASSIST_PEDAL_LEVEL0:
                 ui8_assist_level = OFF;
                 break;
@@ -2594,7 +2622,7 @@ static void uart_receive_package(void) {
                 ui8_assist_level = TURBO;
                 break;
             }
-
+#endif
             if (!ui8_display_ready_flag) {
                 // assist level temp at power on
                 ui8_assist_level_temp = ui8_assist_level;
@@ -2620,10 +2648,16 @@ static void uart_receive_package(void) {
                         ui8_menu_flag = 1;
 
                         // set the new / next menu index:
+#if ENABLE_EKD01
+						// make the menu roll over to the first item
+						if (++ui8_menu_index > 3) {
+							ui8_menu_index = 1;
+						}
+#else
                         if (++ui8_menu_index > 3) {
                             ui8_menu_index = 3;
                         }
-
+#endif
                         // display status alternative lights configuration
                         ui8_display_alternative_lights_configuration = 0;
 
@@ -2724,7 +2758,7 @@ static void uart_receive_package(void) {
                             break;
                         }
 
-                        // display function code enabled (E02, E03,E04)
+                        // displays the function code enabled (E02, E03,E04)
                         ui8_display_function_code = ui8_menu_index + 1;
                         // display function code temp (for display function status VLCD5/6)
                         ui8_display_function_code_temp = ui8_display_function_code;
@@ -3032,7 +3066,7 @@ static void uart_receive_package(void) {
             }
 
 // display function status VLCD5/6
-#if ENABLE_VLCD5 || ENABLE_VLCD6
+#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01
             if (ui8_menu_flag) {
                 if (ui8_menu_counter >= DELAY_FUNCTION_STATUS) {
                     // display function code disabled
@@ -3048,8 +3082,6 @@ static void uart_receive_package(void) {
                     ui8_display_function_code = NO_FUNCTION;
                 }
             }
-#elif ENABLE_850C
-// rbien check
 #endif
 
             // menu function disabled
@@ -3061,7 +3093,7 @@ static void uart_receive_package(void) {
 #if ENABLE_XH18 || ENABLE_VLCD5 || ENABLE_850C
                 if (((ui8_assist_level != OFF) && (ui8_assist_level != ECO))
                     || (ui8_menu_counter >= ui8_delay_display_function))
-#else  // ENABLE VLCD6
+#else  // ENABLE_VLCD6
                 if ((ui8_assist_level != ECO) || (ui8_menu_counter >= ui8_delay_display_function))
 #endif
                 {
@@ -3090,7 +3122,7 @@ static void uart_receive_package(void) {
                     // display data function enabled
                     // ui8_display_data_enabled = 1;
 
-#if ENABLE_VLCD5 || ENABLE_VLCD6
+#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01
                     // display function code disabled
                     ui8_display_function_code = NO_FUNCTION;
 #elif ENABLE_850C
@@ -3190,7 +3222,10 @@ static void uart_receive_package(void) {
                 break;
             }
 
-            // set assist parameter
+            // set assist parameter - ruedbi: range check
+			if( m_configuration_variables.ui8_riding_mode == 0 ) {
+				m_configuration_variables.ui8_riding_mode = POWER_ASSIST_MODE;
+			}
             ui8_riding_mode_parameter =
                     ui8_riding_mode_parameter_array[m_configuration_variables.ui8_riding_mode - 1]
                                                    [ui8_assist_level];
@@ -3383,6 +3418,7 @@ Err-08 is Low Battery
 static void uart_send_package(void) {
     uint8_t ui8_i;
     uint8_t ui8_tx_check_code;
+	static uint8_t ui8_display_function_toggle=0;
 
     // display ready
     if (ui8_display_ready_flag) {
@@ -3396,7 +3432,7 @@ static void uart_send_package(void) {
         // initialize working status
         ui8_working_status &= 0xFE;  // bit0 = 0 (battery normal)
 
-#if ENABLE_VLCD6 || ENABLE_XH18
+#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_EKD01
         switch (ui8_battery_state_of_charge) {
         case 0:
             ui8_working_status |= 0x01;  // bit0 = 1 (battery undervoltage)
@@ -3478,8 +3514,13 @@ static void uart_send_package(void) {
         ui16_battery_power_filtered_x10 =
                 filter(ui16_battery_power_x10, ui16_battery_power_filtered_x10, 8);
         ui8_tx_buffer[4] = (uint8_t)(ui16_battery_power_filtered_x10 / 100);
+#elif ENABLE_EKD01
+        ui8_tx_buffer[3] = 0; // don't care
+        // battery power filtered x 10 for display data
+        ui16_battery_power_filtered_x10 =
+                filter(ui16_battery_power_x10, ui16_battery_power_filtered_x10, 8);
+        ui8_tx_buffer[4] = (uint8_t)(ui16_battery_power_filtered_x10 / 100);
 #else
-        // rbien: set to 0 (?) for now:
         ui8_tx_buffer[3] = 0x46;
         ui8_tx_buffer[4] = 0x46;
 #endif
@@ -3547,7 +3588,7 @@ static void uart_send_package(void) {
                 // fault code
                 ui8_tx_buffer[5] = ui8_display_fault_code;
             }
-#elif ENABLE_VLCD5 || ENABLE_VLCD6
+#elif ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01
             if ((ui8_auto_display_data_status)
                 || (m_configuration_variables.ui8_assist_with_error_enabled)) {
                 // display data
@@ -3562,13 +3603,31 @@ static void uart_send_package(void) {
 #endif
         } else if (ui8_display_function_code != NO_FUNCTION) {
             // ruedbi: this is the handling of the menu function codes displayed as error codes
+			// on parameter change accept
             // function code
+#if ENABLE_EKD01
+			// on this display there is no error code 3 to be found
+			// there is also no other consecutive sequence of 3 errors to be found
+			// so the sequence chosen is 1,2,4 instead
+			switch(ui8_menu_index) {
+			case 1:
+			ui8_display_function_code = 1;
+				break;
+			case 2:
+			ui8_display_function_code = 2;
+				break;
+			case 3:
+			ui8_display_function_code = 4;
+				break;
+			}
+#endif
             if ((!ui8_menu_flag) && (ui8_menu_index > 0U)
                 && ((m_configuration_variables.ui8_set_parameter_enabled)
                     || (ui8_assist_level == OFF)
                     || ((ui8_startup_counter < DELAY_MENU_ON) && (ui8_assist_level == TURBO)))) {
                 // display blinking function code
-                if (ui8_default_flash_state) {
+#if 0
+				if (ui8_default_flash_state) {
                     ui8_tx_buffer[5] = ui8_display_function_code;
                 } else {
                     // clear code
@@ -3578,7 +3637,21 @@ static void uart_send_package(void) {
                 // display data function code
                 ui8_tx_buffer[5] = ui8_display_function_code;
             }
-        } else {
+#else
+				ui8_display_function_toggle++;
+				if ((ui8_display_function_toggle % 8)<4) {
+					ui8_tx_buffer[5] = ui8_display_function_code;
+				} else {
+					// clear code
+					ui8_tx_buffer[5] = CLEAR_DISPLAY;
+				}
+			} else {
+			// display data function code
+			ui8_tx_buffer[5] = ui8_display_function_code;
+			}
+#endif
+
+			} else {
             // clear code
             ui8_tx_buffer[5] = CLEAR_DISPLAY;
         }
@@ -3660,7 +3733,8 @@ static void uart_send_package(void) {
                 ui16_display_data = ui16_display_data_factor
                         / (ui8_display_lights_configuration * (uint8_t)100 + DISPLAY_STATUS_OFFSET);
             } else if ((ui8_menu_counter <= ui8_delay_display_function) && (ui8_menu_index > 0U)) {
-                // ruedbi: this is the scaling for menu modes 2,3 (TOUR,SPORT):
+                // ruedbi: this is the scaling for menu modes 2,3 (TOUR,SPORT)
+				// should get values in the range 10*[1..6]
                 ui16_display_data = ui16_display_data_factor
                         / (ui8_display_riding_mode * (uint8_t)100 + DISPLAY_STATUS_OFFSET);
             } else {
@@ -3927,7 +4001,7 @@ static void check_battery_soc(void) {
     ui16_battery_voltage_soc_filtered_x10 = filter(
             ui16_battery_no_load_voltage_filtered_x10, ui16_battery_voltage_soc_filtered_x10, 2);
 
-#if ENABLE_VLCD6 || ENABLE_XH18
+#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_EKD01
     if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_6_X10) {
         ui8_battery_state_of_charge = 7;
     }  // overvoltage
@@ -3952,6 +4026,8 @@ static void check_battery_soc(void) {
     else {
         ui8_battery_state_of_charge = 0;
     }  // undervoltage
+//#elif ENABLE_EKD01
+//ui8_battery_state_of_charge = 0; // don't care
 #else  // ENABLE_VLCD5 or ENABLE_850C
     if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_8_X10) {
         ui8_battery_state_of_charge = 9;
@@ -4067,7 +4143,7 @@ static void check_battery_soc(void) {
 uint16_t read_battery_soc(void) {
     uint16_t ui16_battery_SOC_calc_x10 = 0;
 
-#if ENABLE_VLCD6 || ENABLE_XH18
+#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_EKD01
     switch (ui8_battery_state_of_charge) {
     case 0:
         ui16_battery_SOC_calc_x10 = 10;
@@ -4098,6 +4174,8 @@ uint16_t read_battery_soc(void) {
         ui16_battery_SOC_calc_x10 = 1000;
         break;  // overvoltage
     }
+//#elif ENABLE_EKD01
+//	ui16_battery_SOC_calc_x10 = 10; // don't care
 #else  // ENABLE_VLCD5 or ENABLE_850C
     switch (ui8_battery_state_of_charge) {
     case 0:

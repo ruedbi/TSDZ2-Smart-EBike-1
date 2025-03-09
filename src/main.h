@@ -13,6 +13,12 @@
 #include "config.h"
 #include <stdint.h>
 
+#if ENABLE_VLCD6
+#define ENABLE_EKD01 1
+#undef ENABLE_VLCD6
+#define ENABLE_VLCD6 0
+#endif
+
 //#define TIME_DEBUG
 //#define HALL_DEBUG
 
@@ -341,6 +347,18 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define NO_FAULT 0
 #define NO_ERROR 0
 
+#if ENABLE_EKD01
+#define ERROR_OVERVOLTAGE 1          // E01
+#define ERROR_TORQUE_SENSOR 2        // E02
+#define ERROR_CADENCE_SENSOR 13       // E13
+#define ERROR_MOTOR_BLOCKED 4        // E04
+#define ERROR_THROTTLE 10             // E10
+#define ERROR_OVERTEMPERATURE 6      // E06
+#define ERROR_BATTERY_OVERCURRENT 7  // E07 (E04 blinking for XH18)
+#define ERROR_SPEED_SENSOR 3         // E13
+#define ERROR_WRITE_EEPROM 9         // E09 shared (E08 blinking for XH18)
+#define ERROR_MOTOR_CHECK 9          // E09 shared (E08 blinking for XH18)
+#else
 #define ERROR_OVERVOLTAGE 1          // E01 (E06 blinking for XH18)
 #define ERROR_TORQUE_SENSOR 2        // E02
 #define ERROR_CADENCE_SENSOR 3       // E03
@@ -351,6 +369,7 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define ERROR_SPEED_SENSOR 8         // E08
 #define ERROR_WRITE_EEPROM 9         // E09 shared (E08 blinking for XH18)
 #define ERROR_MOTOR_CHECK 9          // E09 shared (E08 blinking for XH18)
+#endif
 
 // optional ADC function
 #if ENABLE_TEMPERATURE_LIMIT && ENABLE_THROTTLE
@@ -399,7 +418,23 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define SOC_CALC_VOLTS 2
 
 // cell bars
-#if ENABLE_VLCD6 || ENABLE_XH18
+#if  ENABLE_EKD01
+// note: VLCD5 settings cause E01 overvoltage error here
+#define LI_ION_CELL_VOLTS_6_X100 (uint16_t)((float)LI_ION_CELL_OVERVOLT * 100)
+#define LI_ION_CELL_VOLTS_5_X100 (uint16_t)((float)LI_ION_CELL_RESET_SOC_PERCENT * 100)
+#define LI_ION_CELL_VOLTS_4_X100 (uint16_t)((float)LI_ION_CELL_VOLTS_FULL * 100)
+#define LI_ION_CELL_VOLTS_3_X100 (uint16_t)((float)LI_ION_CELL_VOLTS_3_OF_4 * 100)
+#define LI_ION_CELL_VOLTS_2_X100 (uint16_t)((float)LI_ION_CELL_VOLTS_2_OF_4 * 100)
+#define LI_ION_CELL_VOLTS_1_X100 (uint16_t)((float)LI_ION_CELL_VOLTS_1_OF_4 * 100)
+#define LI_ION_CELL_VOLTS_0_X100 (uint16_t)((float)LI_ION_CELL_VOLTS_EMPTY * 100)
+#define BATTERY_SOC_VOLTS_6_X10 (uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_OVERVOLT * 10))
+#define BATTERY_SOC_VOLTS_5_X10 (uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_RESET_SOC_PERCENT * 10))
+#define BATTERY_SOC_VOLTS_4_X10 (uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_VOLTS_FULL * 10))
+#define BATTERY_SOC_VOLTS_3_X10 (uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_VOLTS_3_OF_4 * 10))
+#define BATTERY_SOC_VOLTS_2_X10 (uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_VOLTS_2_OF_4 * 10))
+#define BATTERY_SOC_VOLTS_1_X10 (uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_VOLTS_1_OF_4 * 10))
+#define BATTERY_SOC_VOLTS_0_X10 (uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_VOLTS_EMPTY * 10))
+#elif ENABLE_VLCD6 || ENABLE_XH18
 #define LI_ION_CELL_VOLTS_6_X100 (uint16_t)((float)LI_ION_CELL_OVERVOLT * 100)
 #define LI_ION_CELL_VOLTS_5_X100 (uint16_t)((float)LI_ION_CELL_RESET_SOC_PERCENT * 100)
 #define LI_ION_CELL_VOLTS_4_X100 (uint16_t)((float)LI_ION_CELL_VOLTS_FULL * 100)
