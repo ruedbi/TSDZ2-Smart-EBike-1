@@ -97,10 +97,10 @@
 #include "uart.h"
 #include <stdint.h>
 
-#if ENABLE_VLCD6
-#define ENABLE_EKD01 1
-#undef ENABLE_VLCD6
-#define ENABLE_VLCD6 0
+#if ENABLE_VLCD5
+#define ENABLE_DZ40 1
+// #undef ENABLE_VLCD6
+// #define ENABLE_VLCD6 0
 #endif
 
 /**
@@ -422,7 +422,7 @@ uint16_t calc_battery_soc_x10(
  */
 void ebike_app_init(void) {
 // minimum value for these displays
-#if ENABLE_VLCD6 || ENABLE_850C || ENABLE_EKD01
+#if ENABLE_VLCD6 || ENABLE_850C || ENABLE_EKD01 || ENABLE_DZ40
     if (ui8_delay_display_function < 70) {
         ui8_delay_display_function = 70;
     }
@@ -2578,7 +2578,7 @@ static void uart_receive_package(void) {
             ui8_assist_level_01_flag = 0;
 
             // set assist level
-#if ENABLE_EKD01
+#if ENABLE_EKD01 || ENABLE_DZ40
 			switch (ui8_assist_level_mask) {
 				case ASSIST_PEDAL_LEVEL0:
 					ui8_assist_level = OFF;
@@ -2648,7 +2648,7 @@ static void uart_receive_package(void) {
                         ui8_menu_flag = 1;
 
                         // set the new / next menu index:
-#if ENABLE_EKD01
+#if ENABLE_EKD01 || ENABLE_DZ40
 						// make the menu roll over to the first item
 						if (++ui8_menu_index > 3) {
 							ui8_menu_index = 1;
@@ -3518,7 +3518,7 @@ static void uart_send_package(void) {
         ui8_tx_buffer[3] = 0; // don't care
         // battery power filtered x 10 for display data
         ui16_battery_power_filtered_x10 =
-                filter(ui16_battery_power_x10, ui16_battery_power_filtered_x10, 8);
+                filter(ui16_battery_power_x10, ui16_battery_power_filtered_x10, 10);
         ui8_tx_buffer[4] = (uint8_t)(ui16_battery_power_filtered_x10 / 100);
 #else
         ui8_tx_buffer[3] = 0x46;
@@ -4001,7 +4001,7 @@ static void check_battery_soc(void) {
     ui16_battery_voltage_soc_filtered_x10 = filter(
             ui16_battery_no_load_voltage_filtered_x10, ui16_battery_voltage_soc_filtered_x10, 2);
 
-#if ENABLE_VLCD6 || ENABLE_XH18
+#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_DZ40
     if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_6_X10) {
         ui8_battery_state_of_charge = 7;
     }  // overvoltage
@@ -4143,7 +4143,7 @@ static void check_battery_soc(void) {
 uint16_t read_battery_soc(void) {
     uint16_t ui16_battery_SOC_calc_x10 = 0;
 
-#if ENABLE_VLCD6 || ENABLE_XH18 //|| ENABLE_EKD01
+#if ENABLE_VLCD6 || ENABLE_XH18  || ENABLE_DZ40 //|| ENABLE_EKD01
     switch (ui8_battery_state_of_charge) {
     case 0:
         ui16_battery_SOC_calc_x10 = 10;

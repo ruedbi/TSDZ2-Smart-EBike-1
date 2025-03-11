@@ -13,10 +13,10 @@
 #include "config.h"
 #include <stdint.h>
 
-#if ENABLE_VLCD6
-#define ENABLE_EKD01 1
-#undef ENABLE_VLCD6
-#define ENABLE_VLCD6 0
+#if ENABLE_VLCD5
+#define ENABLE_DZ40 1
+// #undef ENABLE_VLCD6
+// #define ENABLE_VLCD6 0
 #endif
 
 //#define TIME_DEBUG
