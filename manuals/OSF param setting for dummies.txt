@@ -8,20 +8,14 @@ Things to mention:
 - Do not get confused if the display reacts with dimming on the lights-key action (depends on the display and the setting), especially that "lights on" means "display dim", rather understand it as a action confirmation.
 
 How it works (concept idea)
-Imagine you go to your dentist (switch light on). 
-You sit in the chair, having your moth full of eqipment and the only thing you can say is "mmmh" (light toggle).
-Then the dentist (controller) tells you: You know last time I treated you like so?
-You: mmmh
-Dentist: Now there is a new treatment: Do you accept or reject it (and get the old one)?
-Now how do you answer? You know that the dentist's time is limited so the protocol is like so:
-You wait till the dentist times out (no mmmh) - means you accept
-You mmmh before the timeout - means you reject
-After an (any) accept the procedure ends, but upon a reject the dentist keeps asking up to 2 more questions giving you a new choice.
-That's it
-
-As with any dentist 2 more rules apply:
-- The offer is fixed
-- No matter if you like or don't like the procedure - you have to live with it :-)
+turn the light on to get into the configurator
+if you really intended to only use the light, just do nothing till the action times out (5s by default)
+- during this time the first setting is shown, along with the first error-code
+- if you want to change this setting or want to proceed to the next setting, press the lights key again (light state toggles) before the timeout
+- the new state is shown, blinking
+- to accept the new setting, let it time out
+- to go to the next setting, toggle the light before the timeout
+this procedure gets repeated for the 2nd and 3rd setting
 
 
 If you compile the code yourself, I recommend these settings until you are familiar with it:
