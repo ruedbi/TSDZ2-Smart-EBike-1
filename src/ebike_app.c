@@ -3639,7 +3639,7 @@ static void uart_send_package(void) {
             }
 #else
 				ui8_display_function_toggle++;
-				if ((ui8_display_function_toggle % 8)<4) {
+				if ((ui8_display_function_toggle % 16)<8) {
 					ui8_tx_buffer[5] = ui8_display_function_code;
 				} else {
 					// clear code
