@@ -43,7 +43,7 @@ typedef struct _configuration_variables {
     uint8_t ui8_assist_without_pedal_rotation_enabled;
     uint8_t ui8_assist_with_error_enabled;
     uint8_t ui8_battery_SOC_percentage_8b;
-    uint8_t ui8_set_parameter_enabled;
+    uint8_t ui8_set_parameter_enabled; // ruedbi: global flag that enables / disables the set parameter command
     uint8_t ui8_street_mode_enabled;
     uint8_t ui8_riding_mode;  // selects POWER_ASSIST_MODE ...
     uint8_t ui8_lights_configuration;

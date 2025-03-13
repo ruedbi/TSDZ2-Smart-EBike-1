@@ -10,7 +10,7 @@
 #include "stm8s.h"
 #include "interrupts.h"
 
-volatile uint8_t ui8_tim4_counter = 0;
+volatile uint8_t ui8_tim4_counter = 0; // counts up @1ms and overflows every 256ms
 
 #ifdef __CDT_PARSER__
 #define __interrupt(x)
