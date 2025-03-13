@@ -1796,46 +1796,46 @@ static void check_system(void) {
 			ui8_system_state = ERROR_TORQUE_SENSOR;
 		}
 	}
-
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // E03 ERROR_CADENCE_SENSOR
 #define CHECK_CADENCE_SENSOR_COUNTER_THRESHOLD 250 // 250 * 100ms = 25 seconds
 #define ADC_TORQUE_SENSOR_DELTA_THRESHOLD (uint16_t)((ADC_TORQUE_SENSOR_RANGE_TARGET >> 1) + 20)
-	static uint8_t ui8_check_cadence_sensor_counter;
+static uint8_t ui8_check_cadence_sensor_counter;
 
-	// check cadence sensor
-	if ((ui16_adc_pedal_torque_delta_no_boost > ADC_TORQUE_SENSOR_DELTA_THRESHOLD) && (!ui8_startup_assist_flag) && (ui8_riding_torque_mode) && ((ui8_pedal_cadence_RPM > 130) || (ui8_pedal_cadence_RPM == 0U))) {
-		ui8_check_cadence_sensor_counter++;
-	} else {
-		ui8_check_cadence_sensor_counter = 0;
-	}
+// check cadence sensor
+if ((ui16_adc_pedal_torque_delta_no_boost > ADC_TORQUE_SENSOR_DELTA_THRESHOLD) && (!ui8_startup_assist_flag) && (ui8_riding_torque_mode) && ((ui8_pedal_cadence_RPM > 130) || (ui8_pedal_cadence_RPM == 0U))) {
+	ui8_check_cadence_sensor_counter++;
+} else {
+	ui8_check_cadence_sensor_counter = 0;
+}
 
-	if (ui8_check_cadence_sensor_counter > CHECK_CADENCE_SENSOR_COUNTER_THRESHOLD) {
-		// set cadence sensor error code
-		ui8_system_state = ERROR_CADENCE_SENSOR;
-	}
+if (ui8_check_cadence_sensor_counter > CHECK_CADENCE_SENSOR_COUNTER_THRESHOLD) {
+	// set cadence sensor error code
+	ui8_system_state = ERROR_CADENCE_SENSOR;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // E08 ERROR_SPEED_SENSOR
 #define CHECK_SPEED_SENSOR_COUNTER_THRESHOLD 125 // 125 * 100ms = 12.5 seconds
 #define MOTOR_ERPS_SPEED_THRESHOLD 180
-	static uint16_t ui16_check_speed_sensor_counter;
+static uint16_t ui16_check_speed_sensor_counter;
 
-	// check speed sensor
-	if ((ui16_motor_speed_erps > MOTOR_ERPS_SPEED_THRESHOLD) && (m_configuration_variables.ui8_riding_mode != WALK_ASSIST_MODE) && (m_configuration_variables.ui8_riding_mode != CRUISE_MODE)) {
-		ui16_check_speed_sensor_counter++;
-	} else {
-		ui16_check_speed_sensor_counter = 0;
-	}
+// check speed sensor
+if ((ui16_motor_speed_erps > MOTOR_ERPS_SPEED_THRESHOLD) && (m_configuration_variables.ui8_riding_mode != WALK_ASSIST_MODE) && (m_configuration_variables.ui8_riding_mode != CRUISE_MODE)) {
+	ui16_check_speed_sensor_counter++;
+} else {
+	ui16_check_speed_sensor_counter = 0;
+}
 
-	if (ui16_wheel_speed_x10) {
-		ui16_check_speed_sensor_counter = 0;
-	}
+if (ui16_wheel_speed_x10) {
+	ui16_check_speed_sensor_counter = 0;
+}
 
-	if (ui16_check_speed_sensor_counter > CHECK_SPEED_SENSOR_COUNTER_THRESHOLD) {
-		// set speed sensor error code
-		ui8_system_state = ERROR_SPEED_SENSOR;
-	}
+if (ui16_check_speed_sensor_counter > CHECK_SPEED_SENSOR_COUNTER_THRESHOLD) {
+	// set speed sensor error code
+	ui8_system_state = ERROR_SPEED_SENSOR;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // E04 ERROR_MOTOR_BLOCKED
@@ -1845,44 +1845,44 @@ static void check_system(void) {
 #define MOTOR_BLOCKED_BATTERY_CURRENT_THRESHOLD_X10_NEW 30 // 30 = 3.0 amps
 #define MOTOR_BLOCKED_ERPS_THRESHOLD_NEW 20 // 20 ERPS
 
-	static uint8_t ui8_motor_blocked_counter;
+static uint8_t ui8_motor_blocked_counter;
 
-	// if battery current is over the current threshold and the motor ERPS is below threshold start
-	// setting motor blocked error code
-	if ((ui8_battery_current_filtered_x10 > MOTOR_BLOCKED_BATTERY_CURRENT_THRESHOLD_X10_NEW) && (ui16_motor_speed_erps < MOTOR_BLOCKED_ERPS_THRESHOLD_NEW)) {
-		// increment motor blocked counter with 100 milliseconds
-		++ui8_motor_blocked_counter;
+// if battery current is over the current threshold and the motor ERPS is below threshold start
+// setting motor blocked error code
+if ((ui8_battery_current_filtered_x10 > MOTOR_BLOCKED_BATTERY_CURRENT_THRESHOLD_X10_NEW) && (ui16_motor_speed_erps < MOTOR_BLOCKED_ERPS_THRESHOLD_NEW)) {
+	// increment motor blocked counter with 100 milliseconds
+	++ui8_motor_blocked_counter;
 
-		// check if motor is blocked for more than some safe threshold
-		if (ui8_motor_blocked_counter > MOTOR_BLOCKED_COUNTER_THRESHOLD_NEW) {
-			// set error code
-			ui8_system_state = ERROR_MOTOR_BLOCKED;
+	// check if motor is blocked for more than some safe threshold
+	if (ui8_motor_blocked_counter > MOTOR_BLOCKED_COUNTER_THRESHOLD_NEW) {
+		// set error code
+		ui8_system_state = ERROR_MOTOR_BLOCKED;
 
-			// reset motor blocked counter as the error code is set
-			ui8_motor_blocked_counter = 0;
-		}
-	} else {
-		// current is below the threshold and/or motor ERPS is above the threshold so reset the
-		// counter
+		// reset motor blocked counter as the error code is set
 		ui8_motor_blocked_counter = 0;
 	}
+} else {
+	// current is below the threshold and/or motor ERPS is above the threshold so reset the
+	// counter
+	ui8_motor_blocked_counter = 0;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // E05 ERROR_THROTTLE
 #define THROTTLE_CHECK_COUNTER_THRESHOLD 20 // 20 * 100ms = 2.0 seconds
 #define ADC_THROTTLE_MIN_VALUE_THRESHOLD (uint8_t)(ADC_THROTTLE_MIN_VALUE + 5)
 
-	static uint8_t ui8_throttle_check_counter;
+static uint8_t ui8_throttle_check_counter;
 
-	if (ui8_throttle_mode_array[m_configuration_variables.ui8_street_mode_enabled]) {
-		if (ui8_throttle_check_counter < THROTTLE_CHECK_COUNTER_THRESHOLD) {
-			ui8_throttle_check_counter++;
+if (ui8_throttle_mode_array[m_configuration_variables.ui8_street_mode_enabled]) {
+	if (ui8_throttle_check_counter < THROTTLE_CHECK_COUNTER_THRESHOLD) {
+		ui8_throttle_check_counter++;
 
-			if ((ui16_adc_throttle >> 2) > ADC_THROTTLE_MIN_VALUE_THRESHOLD) {
-				ui8_system_state = ERROR_THROTTLE;
-			}
+		if ((ui16_adc_throttle >> 2) > ADC_THROTTLE_MIN_VALUE_THRESHOLD) {
+			ui8_system_state = ERROR_THROTTLE;
 		}
 	}
+}
 }
 
 static uint8_t ui8_default_flash_state; // ruedbi: if light flashing is enabled, this is the light state
@@ -2802,7 +2802,7 @@ static void uart_receive_package(void) {
 				break;
 			}
 
-			// set assist parameter - ruedbi: range check
+			// set assist parameter - ruedbi: range check before array access:
 			if (m_configuration_variables.ui8_riding_mode == 0) {
 				m_configuration_variables.ui8_riding_mode = POWER_ASSIST_MODE;
 			}
@@ -3183,7 +3183,7 @@ static void uart_send_package(void) {
                 ui8_tx_buffer[5] = ui8_display_function_code;
             }
 #else
-                // ruedbi: toggle 50:50 between function code and data at a defined rate
+				// ruedbi: toggle 50:50 between function code and data at a defined rate
 				ui8_display_function_toggle++;
 				if ((ui8_display_function_toggle % 16) < 8) {
 					ui8_tx_buffer[5] = ui8_display_function_code;
