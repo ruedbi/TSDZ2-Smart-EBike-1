@@ -98,9 +98,9 @@
 #include <stdint.h>
 
 #if ENABLE_VLCD5
-// #define ENABLE_DZ40 1
-// #undef ENABLE_VLCD6
-// #define ENABLE_VLCD6 0
+#define ENABLE_DZ40 1
+// #undef ENABLE_VLCD5
+// #define ENABLE_VLCD5 0
 #endif
 
 /**
@@ -2844,7 +2844,7 @@ static void uart_receive_package(void) {
 			}
 
 // display function status VLCD5/6
-#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01
+#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01// || ENABLE_DZ40
 			if (ui8_menu_flag) {
 				if (ui8_menu_counter >= DELAY_FUNCTION_STATUS) {
 					// display function code disabled
@@ -2869,7 +2869,7 @@ static void uart_receive_package(void) {
 			// special riding modes with walk assist button
 			switch (m_configuration_variables.ui8_riding_mode) {
 			case TORQUE_SENSOR_CALIBRATION_MODE:
-#if ENABLE_XH18 || ENABLE_VLCD5 || ENABLE_850C
+#if ENABLE_XH18 || ENABLE_VLCD5 || ENABLE_850C// || ENABLE_DZ40
 				if (((ui8_assist_level != OFF) && (ui8_assist_level != ECO)) || (ui8_menu_counter >= ui8_delay_display_function))
 #else // ENABLE_VLCD6
 				if ((ui8_assist_level != ECO) || (ui8_menu_counter >= ui8_delay_display_function))
@@ -2902,7 +2902,7 @@ static void uart_receive_package(void) {
 					// display data function enabled
 					// ui8_display_data_enabled = 1;
 
-#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01
+#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01 // || ENABLE_DZ40
 					// display function code disabled
 					ui8_display_function_code = NO_FUNCTION;
 #elif ENABLE_850C
@@ -3204,7 +3204,7 @@ static void uart_send_package(void) {
 		// initialize working status
 		ui8_working_status &= 0xFE; // bit0 = 0 (battery normal)
 
-#if ENABLE_VLCD6 || ENABLE_XH18 // || ENABLE_EKD01
+#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_DZ40 // || ENABLE_EKD01
 		switch (ui8_battery_state_of_charge) {
 		case 0:
 			ui8_working_status |= 0x01; // bit0 = 1 (battery undervoltage)
@@ -3362,7 +3362,7 @@ static void uart_send_package(void) {
 				// fault code
 				ui8_tx_buffer[5] = ui8_display_fault_code;
 			}
-#elif ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01
+#elif ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01 // || ENABLE_DZ40
 			if ((ui8_auto_display_data_status) || (m_configuration_variables.ui8_assist_with_error_enabled)) {
 				// display data
 				ui8_tx_buffer[5] = CLEAR_DISPLAY; // error would overwrite auto-data
