@@ -724,14 +724,17 @@ static void ebike_control_motor(void) {
     // disabled) Read in assembler to ensure data consistency (conversion overrun) E07 (E04 blinking
     // for XH18)
 #if OVERCURRENT_DELAY > 0	// overcurrent error enabled
-	#ifndef __CDT_PARSER__	// avoid Eclipse syntax check
-	__asm
+	#ifndef __CDT_PARSER__
+	// avoid Eclipse syntax check
+// clang-format off
+__asm
 		ld a, 0x53eb // ADC1->DB5RL
 		cp a, _ui8_adc_battery_overcurrent
 		jrc 00011$
 		mov _ui8_error_battery_overcurrent+0, #ERROR_BATTERY_OVERCURRENT
 	00011$:
 	__endasm;
+// clang-format on
 	#endif
 	if (ui8_error_battery_overcurrent) {
 		ui8_error_battery_overcurrent_counter++;
@@ -3597,7 +3600,8 @@ static void uart_send_package(void) {
                 // fault code
                 ui8_tx_buffer[5] = ui8_display_fault_code;
             }
-#else  // ENABLE_850C
+#else  
+		// ENABLE_850C
        // fault code
             ui8_tx_buffer[5] = ui8_display_fault_code;
 #endif

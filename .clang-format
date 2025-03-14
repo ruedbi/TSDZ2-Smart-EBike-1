@@ -1,17 +1,68 @@
-# Format Style Options - Created with Clang Power Tools
----
-BasedOnStyle: WebKit
-AllowShortCaseLabelsOnASingleLine: true
-BreakBeforeBinaryOperators: None
-BreakBeforeBraces: Attach
-ColumnLimit: 250
-ContinuationIndentWidth: 2
-Cpp11BracedListStyle: true
-ExperimentalAutoDetectBinPacking: true
-IncludeBlocks: Regroup
-ReflowComments: false
-SortIncludes: false
-SpaceBeforeInheritanceColon: false
+# requires clang-format 12 or later
+
+# Basic relevant options
+ColumnLimit: 160
+IndentWidth: 4
 TabWidth: 4
 UseTab: Always
-...
+
+# Align operands of binary and ternary expressions.
+AlignOperands: true
+
+# Break after operators in if-statements.
+BreakBeforeBinaryOperators: NonAssignment
+
+# Always break before logical operators.
+# BreakBeforeLogicalOperators: true
+
+# Allow breaking before the '&&' and '||' operators.
+BreakBeforeTernaryOperators: true
+
+# Penalty for breaking before the first '&&'.
+PenaltyBreakFirstLessLess: 120
+
+# Penalty for each line break introduced inside a comment.
+PenaltyBreakComment: 300
+
+# Penalty for breaking an if statement after the '('.
+# PenaltyBreakOpenParenthesis: 0
+
+# Penalty for breaking after '('.
+PenaltyBreakBeforeFirstCallParameter: 19
+
+# Penalty for each character outside of the column limit.
+PenaltyExcessCharacter: 1000000
+
+# Penalty for breaking after an assignment operator.
+PenaltyBreakAssignment: 2000
+
+# Prevent reformatting of comments
+ReflowComments: false
+
+# Set a high penalty for breaking comments
+PenaltyBreakComment: 1000000
+
+# Align consecutive macro definitions
+AlignConsecutiveMacros: true  # or AcrossEmptyLines or AcrossComments
+
+# Keep opening brace on the same line
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterControlStatement: false
+  AfterFunction: false
+  AfterClass: false
+  AfterStruct: false
+  AfterEnum: false
+  AfterNamespace: false
+  AfterUnion: false
+  BeforeCatch: true
+  BeforeElse: true
+  IndentBraces: false
+
+# Ensure closing braces and 'else' are on separate lines
+AllowShortBlocksOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+# AlignEscapedNewlines: Right
