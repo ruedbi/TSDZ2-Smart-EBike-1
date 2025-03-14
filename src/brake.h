@@ -9,7 +9,7 @@
 #ifndef BRAKE_H_
 #define BRAKE_H_
 
-void brake_init (void);
+void brake_init(void);
 //BitStatus brake_is_set (void);
 
 #endif /* BRAKE_H */
