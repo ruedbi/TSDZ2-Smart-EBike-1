@@ -34,15 +34,13 @@ uint16_t map_ui16(uint16_t in, uint16_t in_min, uint16_t in_max, uint16_t out_mi
 	uint16_t out;
 	if (out_max < out_min) {
 		out = out_min
-			  - (uint16_t)(uint32_t)(((uint32_t)((uint32_t)(uint16_t)(in - in_min) * (uint32_t)(uint16_t)(out_min - out_max))
-									  + (uint32_t)(uint16_t)(in_range / 2U))
-									 / in_range);
+			  - (uint16_t)(uint32_t)(
+				  ((uint32_t)((uint32_t)(uint16_t)(in - in_min) * (uint32_t)(uint16_t)(out_min - out_max)) + (uint32_t)(uint16_t)(in_range / 2U)) / in_range);
 	}
 	else {
 		out = out_min
-			  + (uint16_t)(uint32_t)(((uint32_t)((uint32_t)(uint16_t)(in - in_min) * (uint32_t)(uint16_t)(out_max - out_min))
-									  + (uint32_t)(uint16_t)(in_range / 2U))
-									 / in_range);
+			  + (uint16_t)(uint32_t)(
+				  ((uint32_t)((uint32_t)(uint16_t)(in - in_min) * (uint32_t)(uint16_t)(out_max - out_min)) + (uint32_t)(uint16_t)(in_range / 2U)) / in_range);
 	}
 	return out;
 }
@@ -68,15 +66,15 @@ uint8_t map_ui8(uint8_t in, uint8_t in_min, uint8_t in_max, uint8_t out_min, uin
 
 	if (out_max < out_min) {
 		return out_min
-			   - (uint8_t)(uint16_t)((uint16_t)((uint8_t)(in - in_min) * (uint8_t)(out_min - out_max))
-									 / (uint8_t)(in_max
-												 - in_min)); // cppcheck-suppress misra-c2012-10.8 ; direct cast to a wider essential to ensure mul in,a usage
+			   - (uint8_t)(uint16_t)(
+				   (uint16_t)((uint8_t)(in - in_min) * (uint8_t)(out_min - out_max))
+				   / (uint8_t)(in_max - in_min)); // cppcheck-suppress misra-c2012-10.8 ; direct cast to a wider essential to ensure mul in,a usage
 	}
 	else {
 		return out_min
-			   + (uint8_t)(uint16_t)((uint16_t)((uint8_t)(in - in_min) * (uint8_t)(out_max - out_min))
-									 / (uint8_t)(in_max
-												 - in_min)); // cppcheck-suppress misra-c2012-10.8 ; direct cast to a wider essential to ensure mul in,a usage
+			   + (uint8_t)(uint16_t)(
+				   (uint16_t)((uint8_t)(in - in_min) * (uint8_t)(out_max - out_min))
+				   / (uint8_t)(in_max - in_min)); // cppcheck-suppress misra-c2012-10.8 ; direct cast to a wider essential to ensure mul in,a usage
 	}
 }
 

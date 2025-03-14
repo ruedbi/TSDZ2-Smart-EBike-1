@@ -216,7 +216,8 @@ static uint8_t ui8_temp;
 void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER) {
 	// bit 5 of TIM1->CR1 contains counter direction (0=up, 1=down)
 	if (TIM1->CR1 & 0x10) {
-#ifndef __CDT_PARSER__ // disable Eclipse syntax check
+#ifndef __CDT_PARSER__
+		// disable Eclipse syntax check
 		// clang-format off
         __asm
             push cc             // save current Interrupt Mask (I1,I0 bits of CC register)
@@ -337,15 +338,16 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER) {
 				}
 			}
 // update last hall sensor state
-#ifndef __CDT_PARSER__ // disable Eclipse syntax check
-					   // clang-format off
+#ifndef __CDT_PARSER__
+			// disable Eclipse syntax check
+			// clang-format off
             __asm
                 // speed optimization ldw, ldw -> mov,mov
                 // ui16_hall_60_ref_old = ui16_b;
                 mov _ui16_hall_60_ref_old+0, _ui16_b+0
                 mov _ui16_hall_60_ref_old+1, _ui16_b+1
             __endasm;
-					   // clang-format on
+			// clang-format on
 #endif
 			ui8_hall_sensors_state_last = ui8_temp;
 		}
@@ -391,7 +393,8 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER) {
         // we need to put phase voltage 90 degrees ahead of rotor position, to get current 90 degrees ahead and have max torque per amp
         ui8_svm_table_index = ui8_temp + ui8_motor_phase_absolute_angle + ui8_g_foc_angle;
         */
-#ifndef __CDT_PARSER__ // disable Eclipse syntax check
+#ifndef __CDT_PARSER__
+		// disable Eclipse syntax check
 		// clang-format off
         __asm
             clr _ui8_temp+0
@@ -595,7 +598,8 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER) {
 #endif
 
 #ifdef TIME_DEBUG
-#ifndef __CDT_PARSER__ // avoid Eclipse syntax check
+#ifndef __CDT_PARSER__
+		// avoid Eclipse syntax check
 		// clang-format off
         __asm
             ld  a, 0x5250
@@ -624,7 +628,8 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER) {
         TIM1->CCR1H = (uint8_t)(ui16_a >> 8);
         TIM1->CCR1L = (uint8_t)(ui16_a);
         */
-#ifndef __CDT_PARSER__ // avoid Eclipse syntax check
+#ifndef __CDT_PARSER__
+		// avoid Eclipse syntax check
 		// clang-format off
         __asm
         push cc             // save current Interrupt Mask (I1,I0 bits of CC register)
@@ -680,7 +685,8 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER) {
         }
         */
 
-#ifndef __CDT_PARSER__ // avoid Eclipse syntax check
+#ifndef __CDT_PARSER__
+		// avoid Eclipse syntax check
 		// clang-format off
         __asm
         ldw x, 0x53EC
@@ -974,8 +980,8 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER) {
 		}
 
 #ifdef TIME_DEBUG
-#ifndef __CDT_PARSER__ // avoid Eclipse syntax check
-		// clang-format off
+#ifndef __CDT_PARSER__ // avoid Eclipse syntax check                                                                                                           \
+					   // clang-format off
             __asm
                 ld  a, 0x5250
                 and a, #0x10 // counter direction end irq
@@ -984,7 +990,7 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER) {
                 mov _ui16_pwm_cnt_up_irq+1, 0x525f // ui16_pwm_cnt_up_irq LSB = TIM1->CNTRL
             __endasm;
             #endif
-		// clang-format on
+					   // clang-format on
 #endif
 	}
 

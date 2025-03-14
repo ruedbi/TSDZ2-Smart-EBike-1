@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 #if ENABLE_VLCD5
-#define ENABLE_DZ40 1
+// #define ENABLE_DZ40 1
 // #undef ENABLE_VLCD6
 // #define ENABLE_VLCD6 0
 #endif
@@ -90,10 +90,11 @@
 #define THROTTLE_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_MIN	 (uint8_t)(PWM_CYCLES_SECOND / 390)
 
 #define MOTOR_OVER_SPEED_ERPS                                                                                                                                  \
-	((PWM_CYCLES_SECOND / 29) < 650 ? (PWM_CYCLES_SECOND / 29) : 650) // motor max speed | 29 points for the sinewave at max                                   \
+	((PWM_CYCLES_SECOND / 29) < 650 ? (PWM_CYCLES_SECOND / 29)                                                                                                 \
+									: 650)	// motor max speed | 29 points for the sinewave at max                                   \
 																	  // speed (less than PWM_CYCLES_SECOND/29)
-#define MOTOR_SPEED_FIELD_WEAKENING_MIN 490							  // 90 rpm
-#define ERPS_SPEED_OF_MOTOR_REENABLING	320							  // 60 rpm
+#define MOTOR_SPEED_FIELD_WEAKENING_MIN 490 // 90 rpm
+#define ERPS_SPEED_OF_MOTOR_REENABLING	320 // 60 rpm
 
 // foc angle multiplier
 #if MOTOR_TYPE
@@ -108,16 +109,19 @@
 #define CADENCE_SENSOR_CALC_COUNTER_MIN			  (uint16_t)((uint32_t)PWM_CYCLES_SECOND * 100U / 446U) // 3500 at 15.625KHz
 #define CADENCE_SENSOR_TICKS_COUNTER_MIN_AT_SPEED (uint16_t)((uint32_t)PWM_CYCLES_SECOND * 10U / 558U)	// 280 at 15.625KHz
 #define CADENCE_TICKS_STARTUP                                                                                                                                  \
-	(uint16_t)((uint32_t)PWM_CYCLES_SECOND * 10U / 25U) // ui16_cadence_sensor_ticks value for startup. About 7-8 RPM (6250                                    \
+	(uint16_t)((uint32_t)PWM_CYCLES_SECOND * 10U                                                                                                               \
+			   / 25U) // ui16_cadence_sensor_ticks value for startup. About 7-8 RPM (6250                                    \
 														// at 15.625KHz)
 #define CADENCE_SENSOR_STANDARD_MODE_SCHMITT_TRIGGER_THRESHOLD                                                                                                 \
-	(uint16_t)((uint32_t)PWM_CYCLES_SECOND * 10U / 446U) // software based Schmitt trigger to stop motor jitter when at resolution                             \
+	(uint16_t)((uint32_t)PWM_CYCLES_SECOND * 10U                                                                                                               \
+			   / 446U) // software based Schmitt trigger to stop motor jitter when at resolution                             \
 														 // limits (350 at 15.625KHz)
 
 // Wheel speed sensor
 #define WHEEL_SPEED_SENSOR_TICKS_COUNTER_MAX (uint16_t)((uint32_t)PWM_CYCLES_SECOND * 10U / 1157U) // (135 at 15,625KHz) something like 200 m/h with a 6'' wheel
 #define WHEEL_SPEED_SENSOR_TICKS_COUNTER_MIN                                                                                                                   \
-	(uint16_t)((uint32_t)PWM_CYCLES_SECOND * 1000U / 477U) // 32767@15625KHz could be a bigger number but will make for a slow detection                       \
+	(uint16_t)((uint32_t)PWM_CYCLES_SECOND * 1000U                                                                                                             \
+			   / 477U) // 32767@15625KHz could be a bigger number but will make for a slow detection                       \
 														   // of stopped wheel speed
 
 // duty cycle
