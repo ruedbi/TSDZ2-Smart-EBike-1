@@ -6,12 +6,11 @@
  * Released under the GPL License, Version 3
  */
 
-#include "stm8s_gpio.h"
-#include "pins.h"
 #include "brake.h"
+#include "pins.h"
+#include "stm8s_gpio.h"
 
 void brake_init(void) {
-    // brake pin as external input pin interrupt
-    GPIO_Init(BRAKE__PORT, BRAKE__PIN, GPIO_MODE_IN_FL_NO_IT); // with external interrupt
+	// brake pin as external input pin interrupt
+	GPIO_Init(BRAKE__PORT, BRAKE__PIN, GPIO_MODE_IN_FL_NO_IT); // with external interrupt
 }
-

@@ -6,21 +6,21 @@
  * Released under the GPL License, Version 3
  */
 
-#include <stdint.h>
-#include "interrupts.h"
-#include "stm8s.h"
-#include "uart.h"
-#include "pwm.h"
-#include "motor.h"
-#include "wheel_speed_sensor.h"
-#include "brake.h"
-#include "pas.h"
 #include "adc.h"
-#include "timers.h"
+#include "brake.h"
 #include "ebike_app.h"
-#include "torque_sensor.h"
 #include "eeprom.h"
+#include "interrupts.h"
 #include "lights.h"
+#include "motor.h"
+#include "pas.h"
+#include "pwm.h"
+#include "stm8s.h"
+#include "timers.h"
+#include "torque_sensor.h"
+#include "uart.h"
+#include "wheel_speed_sensor.h"
+#include <stdint.h>
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 //// Functions prototypes
@@ -67,52 +67,50 @@ static uint8_t ui8_main_time;
 uint8_t ui8_max_ebike_time = 0;
 #endif
 
-
 static uint8_t ui8_1ms_counter = 0;
 static uint8_t ui8_ebike_app_controller_counter = 0;
 
 int main(void) {
-    // set clock at the max 16 MHz
-    CLK_HSIPrescalerConfig(CLK_PRESCALER_HSIDIV1);
+	// set clock at the max 16 MHz
+	CLK_HSIPrescalerConfig(CLK_PRESCALER_HSIDIV1);
 
-    brake_init();
-    /* ++++++++++++++
+	brake_init();
+	/* ++++++++++++++
     while (GPIO_ReadInputPin(BRAKE__PORT, BRAKE__PIN) == 0)
         ; // hold here while brake is pressed -- this is a protection for development
     */
-    adc_init();
-    lights_init();
-    uart2_init();
-    timers_init();
-    torque_sensor_init();
-    pas_init();
-    wheel_speed_sensor_init();
-    pwm_init();
-    hall_sensor_init();
+	adc_init();
+	lights_init();
+	uart2_init();
+	timers_init();
+	torque_sensor_init();
+	pas_init();
+	wheel_speed_sensor_init();
+	pwm_init();
+	hall_sensor_init();
 	EEPROM_init();
-    enableInterrupts();
+	enableInterrupts();
 	ebike_app_init();
 
-    while (1) {
-        ui8_1ms_counter = ui8_tim4_counter;
+	while (1) {
+		ui8_1ms_counter = ui8_tim4_counter;
 
-        // run every 25ms. Max measured ebike_app_controller() duration is 3,1 ms.
-        if ((uint8_t)(ui8_1ms_counter - ui8_ebike_app_controller_counter) >= 25U) {
+		// run every 25ms. Max measured ebike_app_controller() duration is 3,1 ms.
+		if ((uint8_t)(ui8_1ms_counter - ui8_ebike_app_controller_counter) >= 25U) {
 
-            #ifdef TIME_DEBUG
-            // incremented every 50us by PWM interrupt function
-            ui8_main_time = 0;
-            #endif
+#ifdef TIME_DEBUG
+			// incremented every 50us by PWM interrupt function
+			ui8_main_time = 0;
+#endif
 
-            ui8_ebike_app_controller_counter = ui8_1ms_counter;
-            ebike_app_controller();
+			ui8_ebike_app_controller_counter = ui8_1ms_counter;
+			ebike_app_controller();
 
-            #ifdef TIME_DEBUG
-            ui8_main_time = ui8_tim4_counter - ui8_main_time
-            if (ui8_main_time > ui8_max_ebike_time) {
-                ui8_max_ebike_time = ui8_main_time;
+#ifdef TIME_DEBUG
+			ui8_main_time = ui8_tim4_counter - ui8_main_time if (ui8_main_time > ui8_max_ebike_time) {
+				ui8_max_ebike_time = ui8_main_time;
 			}
-            #endif
-        }
-    }
+#endif
+		}
+	}
 }

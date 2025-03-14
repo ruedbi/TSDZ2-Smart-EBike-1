@@ -16,4 +16,3 @@ int uart_put_char(int c);
 int uart_get_char(void);
 
 #endif /* UART_H_ */
-

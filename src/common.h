@@ -15,14 +15,14 @@
 // ruedbi: should be an enum ...
 // off mode would create illegale array access - removed
 // #define OFF_MODE                                  0
-#define POWER_ASSIST_MODE                         1
-#define TORQUE_ASSIST_MODE                        2
-#define CADENCE_ASSIST_MODE                       3
-#define eMTB_ASSIST_MODE                          4
-#define HYBRID_ASSIST_MODE						  5
-#define CRUISE_MODE                               6
-#define WALK_ASSIST_MODE                          7
-#define TORQUE_SENSOR_CALIBRATION_MODE            8
+#define POWER_ASSIST_MODE			   1
+#define TORQUE_ASSIST_MODE			   2
+#define CADENCE_ASSIST_MODE			   3
+#define eMTB_ASSIST_MODE			   4
+#define HYBRID_ASSIST_MODE			   5
+#define CRUISE_MODE					   6
+#define WALK_ASSIST_MODE			   7
+#define TORQUE_SENSOR_CALIBRATION_MODE 8
 
 // walk assist
 //#define WALK_ASSIST_THRESHOLD_SPEED_X10           70  // 70 -> 7.0 kph, this is the maximum speed limit from which walk assist can be activated
@@ -31,9 +31,9 @@
 //#define CRUISE_THRESHOLD_SPEED_X10                90  // 90 -> 9.0 kph, this is the minimum speed limit from which cruise can be activated
 
 // optional ADC function
-#define NOT_IN_USE                                0
-#define TEMPERATURE_CONTROL                       1
-#define THROTTLE_CONTROL                          2
+#define NOT_IN_USE			0
+#define TEMPERATURE_CONTROL 1
+#define THROTTLE_CONTROL	2
 
 uint16_t map_ui16(uint16_t in, uint16_t in_min, uint16_t in_max, uint16_t out_min, uint16_t out_max);
 uint8_t map_ui8(uint8_t in, uint8_t in_min, uint8_t in_max, uint8_t out_min, uint8_t out_max);
