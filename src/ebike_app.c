@@ -1987,6 +1987,29 @@ static void uart_receive_package(void) {
 			ui8_assist_level_01_flag = 0;
 
 			// set assist level
+#if ENABLE_VLCD6
+			switch (ui8_assist_level_mask) {
+			case ASSIST_PEDAL_LEVEL0:
+				ui8_assist_level = OFF;
+				break;
+			case ASSIST_PEDAL_LEVEL01:
+				ui8_assist_level = ECO;
+				break;
+			case ASSIST_PEDAL_LEVEL1:
+				ui8_assist_level = TOUR;
+				break;
+			case ASSIST_PEDAL_LEVEL2:
+				ui8_assist_level = SPORT;
+				break;
+			case ASSIST_PEDAL_LEVEL3:
+				ui8_assist_level = TURBO;
+				break;
+			case ASSIST_PEDAL_LEVEL4:
+				ui8_assist_level = ECO; // "ECO-ECO-mode"
+				ui8_assist_level_01_flag = 1;
+				break;
+			}
+#else
 			switch (ui8_assist_level_mask) {
 			case ASSIST_PEDAL_LEVEL0:
 				ui8_assist_level = OFF;
@@ -2008,7 +2031,7 @@ static void uart_receive_package(void) {
 				ui8_assist_level = TURBO;
 				break;
 			}
-
+#endif
 			if (!ui8_display_ready_flag) {
 				// assist level temp at power on
 				ui8_assist_level_temp = ui8_assist_level;
