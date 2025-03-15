@@ -154,9 +154,12 @@ void EEPROM_controller(uint8_t ui8_operation, uint8_t ui8_byte_init) {
 		p_configuration_variables->ui8_set_parameter_enabled = FLASH_ReadByte(ADDRESS_SET_PARAMETER_ON_STARTUP);
 		p_configuration_variables->ui8_street_mode_enabled = FLASH_ReadByte(ADDRESS_STREET_MODE_ON_STARTUP);
 		p_configuration_variables->ui8_riding_mode = FLASH_ReadByte(ADDRESS_RIDING_MODE_ON_STARTUP);
+#if 0 
+ruedbi: removed again
 		if ((p_configuration_variables->ui8_riding_mode > TORQUE_SENSOR_CALIBRATION_MODE) || (p_configuration_variables->ui8_riding_mode == 0)) {
 			p_configuration_variables->ui8_riding_mode = POWER_ASSIST_MODE;
 		}
+#endif
 		p_configuration_variables->ui8_lights_configuration = FLASH_ReadByte(ADDRESS_LIGHTS_CONFIGURATION_ON_STARTUP);
 		p_configuration_variables->ui8_startup_boost_enabled = FLASH_ReadByte(ADDRESS_STARTUP_BOOST_ON_STARTUP);
 		p_configuration_variables->ui8_auto_display_data_enabled = FLASH_ReadByte(ADDRESS_ENABLE_AUTO_DATA_DISPLAY);

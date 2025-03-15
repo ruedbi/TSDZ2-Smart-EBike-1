@@ -145,7 +145,7 @@ static uint8_t ui8_walk_assist_enabled_array[2] = {ENABLE_WALK_ASSIST, STREET_MO
 static uint8_t ui8_display_battery_soc_flag = 0;
 // the selected riding mode, as POWER_ASSIST_MODE ...; somewhat redundant with
 // m_configuration_variables.ui8_riding_mode
-static uint8_t ui8_display_riding_mode = POWER_ASSIST_MODE; // != 0 !!!
+static uint8_t ui8_display_riding_mode = 0;
 static uint8_t ui8_display_lights_configuration = 0;
 static uint8_t ui8_display_alternative_lights_configuration = 0;
 static uint8_t ui8_display_torque_sensor_flag_1 = 0;
@@ -2846,10 +2846,9 @@ static void uart_receive_package(void) {
 // display function status VLCD5/6
 #if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01// || ENABLE_DZ40
 			if (ui8_menu_flag) {
-				if (ui8_menu_counter >= DELAY_FUNCTION_STATUS) {
+				if (ui8_menu_counter >= DELAY_FUNCTION_STATUS)
 					// display function code disabled
 					ui8_display_function_code = NO_FUNCTION;
-				}
 			}
 			else {
 				if ((ui8_menu_counter > (DELAY_MENU_ON - DELAY_FUNCTION_STATUS)) && (ui8_menu_counter < DELAY_MENU_ON) && (ui8_menu_index > 0U)) {
@@ -2905,8 +2904,6 @@ static void uart_receive_package(void) {
 #if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01 // || ENABLE_DZ40
 					// display function code disabled
 					ui8_display_function_code = NO_FUNCTION;
-#elif ENABLE_850C
-					// rbien check
 #endif
 				}
 				break;
