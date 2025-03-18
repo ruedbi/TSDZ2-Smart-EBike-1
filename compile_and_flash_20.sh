@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-version="v01_dz40mini"
+version="v1_0_dz40mini"
+# version="dz40mini_test"
 settings_date=$(date +"%Y%m%d_%H%M%S")
+settings_date=$(date +"%Y%m%d")
 
 release_folder=$(pwd)/releases
 backup_folder=$(pwd)/releases/backup

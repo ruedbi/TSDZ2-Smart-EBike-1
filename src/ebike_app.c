@@ -145,7 +145,7 @@ static uint8_t ui8_walk_assist_enabled_array[2] = {ENABLE_WALK_ASSIST, STREET_MO
 static uint8_t ui8_display_battery_soc_flag = 0;
 // the selected riding mode, as POWER_ASSIST_MODE ...; somewhat redundant with
 // m_configuration_variables.ui8_riding_mode
-static uint8_t ui8_display_riding_mode = 0;
+static uint8_t ui8_display_riding_mode = POWER_ASSIST_MODE; // != 0 !!!
 static uint8_t ui8_display_lights_configuration = 0;
 static uint8_t ui8_display_alternative_lights_configuration = 0;
 static uint8_t ui8_display_torque_sensor_flag_1 = 0;
@@ -2455,10 +2455,9 @@ static void uart_receive_package(void) {
 			// display ready
 			ui8_display_ready_flag = 1;
 
-			// display lights button pressed:
-			// ruedbi: this is the part where data are restored after "reject" by the user
+			// display lights-button pressed:
 			if (ui8_lights_button_flag) {
-				// lights off:
+				// lights already on or off-on:
 				// ruedbi: check if this is the light turn off-on transition:
 				if ((!ui8_lights_flag)
 					&& ((m_configuration_variables.ui8_set_parameter_enabled) || (ui8_assist_level == OFF)
@@ -2581,7 +2580,7 @@ static void uart_receive_package(void) {
 						ui8_lights_counter = 0;
 						// restart menu counter
 						ui8_menu_counter = 0;
-					}
+					} // end lights turn-on transition
 
 					// after some seconds: switch on lights (if enabled) and abort function
 					if ((ui8_lights_counter >= DELAY_LIGHTS_ON)
@@ -2844,11 +2843,12 @@ static void uart_receive_package(void) {
 			}
 
 // display function status VLCD5/6
-#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01// || ENABLE_DZ40
+#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01 || ENABLE_DZ40
 			if (ui8_menu_flag) {
-				if (ui8_menu_counter >= DELAY_FUNCTION_STATUS)
+				if (ui8_menu_counter >= DELAY_FUNCTION_STATUS) {
 					// display function code disabled
 					ui8_display_function_code = NO_FUNCTION;
+				}
 			}
 			else {
 				if ((ui8_menu_counter > (DELAY_MENU_ON - DELAY_FUNCTION_STATUS)) && (ui8_menu_counter < DELAY_MENU_ON) && (ui8_menu_index > 0U)) {
@@ -2868,7 +2868,7 @@ static void uart_receive_package(void) {
 			// special riding modes with walk assist button
 			switch (m_configuration_variables.ui8_riding_mode) {
 			case TORQUE_SENSOR_CALIBRATION_MODE:
-#if ENABLE_XH18 || ENABLE_VLCD5 || ENABLE_850C// || ENABLE_DZ40
+#if ENABLE_XH18 || ENABLE_VLCD5 || ENABLE_850C || ENABLE_DZ40
 				if (((ui8_assist_level != OFF) && (ui8_assist_level != ECO)) || (ui8_menu_counter >= ui8_delay_display_function))
 #else // ENABLE_VLCD6
 				if ((ui8_assist_level != ECO) || (ui8_menu_counter >= ui8_delay_display_function))
@@ -2901,8 +2901,11 @@ static void uart_receive_package(void) {
 					// display data function enabled
 					// ui8_display_data_enabled = 1;
 
-#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01 // || ENABLE_DZ40
+#if ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01 || ENABLE_DZ40
 					// display function code disabled
+					ui8_display_function_code = NO_FUNCTION;
+#elif ENABLE_850C
+					// rbien check
 					ui8_display_function_code = NO_FUNCTION;
 #endif
 				}
@@ -3000,8 +3003,8 @@ static void uart_receive_package(void) {
 			}
 
 			// set assist parameter - ruedbi: range check before array access:
-#warning "ruedbi: code removed"
-#if 0
+// #warning "ruedbi: code removed"
+#if 1
 			if (m_configuration_variables.ui8_riding_mode == 0) {
 				m_configuration_variables.ui8_riding_mode = POWER_ASSIST_MODE;
 			}
@@ -3359,7 +3362,7 @@ static void uart_send_package(void) {
 				// fault code
 				ui8_tx_buffer[5] = ui8_display_fault_code;
 			}
-#elif ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01 // || ENABLE_DZ40
+#elif ENABLE_VLCD5 || ENABLE_VLCD6 || ENABLE_EKD01 || ENABLE_DZ40
 			if ((ui8_auto_display_data_status) || (m_configuration_variables.ui8_assist_with_error_enabled)) {
 				// display data
 				ui8_tx_buffer[5] = CLEAR_DISPLAY; // error would overwrite auto-data
@@ -3416,8 +3419,8 @@ static void uart_send_package(void) {
 #else
 				// ruedbi: toggle 50:50 between function code and data at a defined rate
 				ui8_display_function_toggle++;
-				if ((ui8_display_function_toggle % 4) < 2) {
-					ui8_tx_buffer[5] = 5; //ui8_display_function_code;
+				if ((ui8_display_function_toggle % 8) < 4) {
+					ui8_tx_buffer[5] = ui8_display_function_code;
 				}
 				else {
 					// clear code
