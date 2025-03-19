@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-version="v1_0_mtb_ruedbi_26_ekd01"
+version="v1_1_26_500_25_ekd01"
 settings_date=$(date +"%Y%m%d_%H%M%S")
 
 release_folder=$(pwd)/releases
