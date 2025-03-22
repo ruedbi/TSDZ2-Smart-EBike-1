@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-version="v1_0_dz40mini"
+version="v1_1_azub_dz40mini"
 # version="dz40mini_test"
 settings_date=$(date +"%Y%m%d_%H%M%S")
 settings_date=$(date +"%Y%m%d")
