@@ -534,7 +534,10 @@ static void ebike_control_motor(void)
 		__endasm;
 		#endif
 		if (ui8_error_battery_overcurrent != 0U) {
-			ui8_error_battery_overcurrent_counter++;
+			// Prevent counter overflow - saturate at delay value + 1
+			if (ui8_error_battery_overcurrent_counter < (ui8_battery_overcurrent_delay + 1U)) {
+				ui8_error_battery_overcurrent_counter++;
+			}
 		}
 		else {
 			ui8_error_battery_overcurrent_counter = 0;
@@ -1716,7 +1719,10 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 	if ((ui16_motor_speed_erps > MOTOR_CHECK_ERPS_THRESHOLD)
 		&&((ui8_riding_torque_mode) || (m_configuration_variables.ui8_riding_mode == CADENCE_ASSIST_MODE))
 		&& (ui8_adc_battery_current_target == 0U || ui8_duty_cycle_target == 0U)) {
-			ui8_motor_check_goes_alone_timer++;
+			// Prevent counter overflow - saturate at threshold + 1
+			if (ui8_motor_check_goes_alone_timer < (MOTOR_CHECK_TIME_GOES_ALONE_TRESHOLD + 1U)) {
+				ui8_motor_check_goes_alone_timer++;
+			}
 	}
 	else {
 		ui8_motor_check_goes_alone_timer = 0;
@@ -1736,7 +1742,10 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 		  ||(ui16_adc_pedal_torque_offset_init < 10)
 		  ||(ui16_adc_pedal_torque > 500)
 		  ||(ui8_adc_pedal_torque_offset_error)) {
-			ui8_check_torque_sensor_counter++;
+			// Prevent counter overflow - saturate at threshold + 1
+			if (ui8_check_torque_sensor_counter < (CHECK_TORQUE_SENSOR_COUNTER_THRESHOLD + 1U)) {
+				ui8_check_torque_sensor_counter++;
+			}
 		}
 		else {
 			ui8_check_torque_sensor_counter = 0;
@@ -1758,7 +1767,10 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 	if ((ui16_adc_pedal_torque_delta_no_boost > ADC_TORQUE_SENSOR_DELTA_THRESHOLD)
 	  &&(!ui8_startup_assist_flag)&&(ui8_riding_torque_mode)
 	  &&(ui8_pedal_cadence_RPM == 0U)) {
-		ui8_check_cadence_sensor_counter++;
+		// Prevent counter overflow - saturate at threshold + 1
+		if (ui8_check_cadence_sensor_counter < (CHECK_CADENCE_SENSOR_COUNTER_THRESHOLD + 1U)) {
+			ui8_check_cadence_sensor_counter++;
+		}
 	}
 	else {
 		ui8_check_cadence_sensor_counter = 0;
@@ -1780,7 +1792,10 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 	  &&(m_configuration_variables.ui8_riding_mode != WALK_ASSIST_MODE)
 	  &&(m_configuration_variables.ui8_riding_mode != CRUISE_MODE)
 	  &&(!ui8_startup_assist_flag)) {
-		ui16_check_speed_sensor_counter++;
+		// Prevent counter overflow - saturate at threshold + 1
+		if (ui16_check_speed_sensor_counter < (CHECK_SPEED_SENSOR_COUNTER_THRESHOLD + 1U)) {
+			ui16_check_speed_sensor_counter++;
+		}
 	}
 	else {
 		ui16_check_speed_sensor_counter = 0;
@@ -1842,6 +1857,98 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 				ui8_system_state = ERROR_THROTTLE;
 			}
 			
+	}
+	
+	// Error recovery mechanism - clear error state if fault condition no longer exists
+	// Only attempt recovery for non-critical errors after delay period
+#define ERROR_RECOVERY_DELAY          50  // 50 * 100ms = 5.0 seconds - delay before recovery attempt
+	static uint8_t ui8_error_recovery_counter = 0U;
+	
+	if (ui8_system_state != NO_ERROR) {
+		uint8_t ui8_fault_condition_exists = 0;
+		
+		// Check if fault condition still exists for each error type
+		switch (ui8_system_state) {
+		case ERROR_MOTOR_CHECK:
+			// Motor check error: verify motor is no longer going alone
+			if ((ui16_motor_speed_erps > MOTOR_CHECK_ERPS_THRESHOLD)
+				&& ((ui8_riding_torque_mode) || (m_configuration_variables.ui8_riding_mode == CADENCE_ASSIST_MODE))
+				&& (ui8_adc_battery_current_target == 0U || ui8_duty_cycle_target == 0U)) {
+				ui8_fault_condition_exists = 1;
+			}
+			break;
+			
+		case ERROR_TORQUE_SENSOR:
+			// Torque sensor error: verify sensor values are now in valid range
+			if (ui8_riding_torque_mode) {
+				if ((ui16_adc_pedal_torque_offset_init > 300)
+				  || (ui16_adc_pedal_torque_offset_init < 10)
+				  || (ui16_adc_pedal_torque > 500)
+				  || (ui8_adc_pedal_torque_offset_error)) {
+					ui8_fault_condition_exists = 1;
+				}
+			}
+			break;
+			
+		case ERROR_CADENCE_SENSOR:
+			// Cadence sensor error: verify cadence is now detected
+			if ((ui16_adc_pedal_torque_delta_no_boost > ADC_TORQUE_SENSOR_DELTA_THRESHOLD)
+			  && (!ui8_startup_assist_flag) && (ui8_riding_torque_mode)
+			  && (ui8_pedal_cadence_RPM == 0U)) {
+				ui8_fault_condition_exists = 1;
+			}
+			break;
+			
+		case ERROR_SPEED_SENSOR:
+			// Speed sensor error: verify wheel speed is now detected
+			if ((ui16_motor_speed_erps > MOTOR_ERPS_SPEED_THRESHOLD)
+			  && (m_configuration_variables.ui8_riding_mode != WALK_ASSIST_MODE)
+			  && (m_configuration_variables.ui8_riding_mode != CRUISE_MODE)
+			  && (!ui8_startup_assist_flag)
+			  && (ui16_wheel_speed_x10 == 0U)) {
+				ui8_fault_condition_exists = 1;
+			}
+			break;
+			
+		case ERROR_MOTOR_BLOCKED:
+			// Motor blocked error: verify motor is no longer blocked
+			if ((ui8_battery_current_filtered_x10 > MOTOR_BLOCKED_BATTERY_CURRENT_THRESHOLD_X10_NEW)
+			  && (ui16_motor_speed_erps < MOTOR_BLOCKED_ERPS_THRESHOLD_NEW)) {
+				ui8_fault_condition_exists = 1;
+			}
+			break;
+			
+		case ERROR_BATTERY_OVERCURRENT:
+		case ERROR_THROTTLE:
+			// Critical errors: do not auto-recover, require power cycle
+			ui8_fault_condition_exists = 1;
+			break;
+			
+		default:
+			// Unknown error state: do not auto-recover
+			ui8_fault_condition_exists = 1;
+			break;
+		}
+		
+		// If fault condition no longer exists, start recovery counter
+		if (!ui8_fault_condition_exists) {
+			if (ui8_error_recovery_counter < ERROR_RECOVERY_DELAY) {
+				ui8_error_recovery_counter++;
+			}
+			else {
+				// Recovery delay elapsed, clear error state
+				ui8_system_state = NO_ERROR;
+				ui8_error_recovery_counter = 0;
+			}
+		}
+		else {
+			// Fault condition still exists, reset recovery counter
+			ui8_error_recovery_counter = 0;
+		}
+	}
+	else {
+		// No error state, reset recovery counter
+		ui8_error_recovery_counter = 0;
 	}
 }
 
@@ -2905,8 +3012,15 @@ static void uart_receive_package(void)
 			}
 			
 			// current limit with power limit
-			ui8_adc_battery_current_max_temp_2 = (uint8_t)((uint32_t)(ui32_adc_battery_power_max_x1000_array[m_configuration_variables.ui8_street_mode_enabled]
-				/ ui16_battery_voltage_filtered_x1000));
+			// Prevent division by zero - ensure battery voltage is valid
+			if (ui16_battery_voltage_filtered_x1000 > 0U) {
+				ui8_adc_battery_current_max_temp_2 = (uint8_t)((uint32_t)(ui32_adc_battery_power_max_x1000_array[m_configuration_variables.ui8_street_mode_enabled]
+					/ ui16_battery_voltage_filtered_x1000));
+			}
+			else {
+				// Invalid battery voltage, use current limit only (no power limit)
+				ui8_adc_battery_current_max_temp_2 = ui8_adc_battery_current_max_temp_1;
+			}
 			
 			// set max battery current
 			ui8_adc_battery_current_max = ui8_min(ui8_adc_battery_current_max_temp_1, ui8_adc_battery_current_max_temp_2);
@@ -3584,11 +3698,19 @@ uint16_t read_battery_soc(void)
 {
 	uint16_t ui16_battery_SOC_calc_x10 = 0;
 	
-	uint8_t ui8_battery_soc_index = (uint8_t) ((uint16_t) (100
-		- ((ui16_battery_voltage_soc_filtered_x10 - BATTERY_LOW_VOLTAGE_CUT_OFF_X10) * 100U)
-		/ (BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10 - BATTERY_LOW_VOLTAGE_CUT_OFF_X10)));
-	
-	ui16_battery_SOC_calc_x10 = (uint16_t)((100 - ui8_battery_soc_used[ui8_battery_soc_index]) * 10U);
+	// Prevent division by zero - ensure voltage reset is greater than cutoff
+	uint16_t ui16_voltage_range = BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10 - BATTERY_LOW_VOLTAGE_CUT_OFF_X10;
+	if (ui16_voltage_range > 0U) {
+		uint8_t ui8_battery_soc_index = (uint8_t) ((uint16_t) (100
+			- ((ui16_battery_voltage_soc_filtered_x10 - BATTERY_LOW_VOLTAGE_CUT_OFF_X10) * 100U)
+			/ ui16_voltage_range));
+		
+		ui16_battery_SOC_calc_x10 = (uint16_t)((100 - ui8_battery_soc_used[ui8_battery_soc_index]) * 10U);
+	}
+	else {
+		// Invalid voltage range, return safe default (0%)
+		ui16_battery_SOC_calc_x10 = 0;
+	}
 	
 	return ui16_battery_SOC_calc_x10;
 }

@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include "interrupts.h"
 #include "stm8s.h"
+#include "stm8s_iwdg.h"
 #include "uart.h"
 #include "pwm.h"
 #include "motor.h"
@@ -91,6 +92,14 @@ int main(void) {
     hall_sensor_init();
 	EEPROM_init();
     enableInterrupts();
+	
+	// Initialize Independent Watchdog Timer (IWDG) for system safety
+	// Watchdog timeout: ~2 seconds (64kHz/64 prescaler = 1kHz, reload 2000 = 2000ms)
+	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
+	IWDG_SetPrescaler(IWDG_Prescaler_64);  // 64kHz/64 = 1kHz, ~1ms per count
+	IWDG_SetReload(2000);  // 2000ms = 2 second timeout
+	IWDG_Enable();
+	
 	ebike_app_init();
 
     while (1) {
@@ -106,6 +115,10 @@ int main(void) {
 
             ui8_ebike_app_controller_counter = ui8_1ms_counter;
             ebike_app_controller();
+            
+            // Refresh watchdog timer to prevent system reset
+            // Called every 25ms, well within 2 second timeout
+            IWDG_ReloadCounter();
 
 #ifdef TIME_DEBUG
             ui8_main_time = ui8_tim4_counter - ui8_main_time
