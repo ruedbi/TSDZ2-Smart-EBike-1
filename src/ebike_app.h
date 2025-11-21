@@ -5,7 +5,7 @@
  *
  * Released under the GPL License, Version 3
  */
-
+// clang-format off
 #ifndef EBIKE_APP_H_
 #define EBIKE_APP_H_
 

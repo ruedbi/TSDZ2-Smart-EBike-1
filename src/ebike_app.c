@@ -5,7 +5,7 @@
  *
  * Released under the GPL License, Version 3
  */
-
+// clang-format off
 #include "ebike_app.h"
 #include <stdint.h>
 #include "stm8s.h"
@@ -269,6 +269,7 @@ static void apply_walk_assist(void);
 static void apply_throttle(void);
 static void apply_temperature_limiting(void);
 static void apply_speed_limit(void);
+static void apply_back_emf_protection(void);
 
 // functions for oem display
 static void calc_oem_wheel_speed(void);
@@ -514,6 +515,12 @@ static void ebike_control_motor(void)
 	
     // speed limit
     apply_speed_limit();
+	
+	// Back-EMF protection based on motor speed (ERPS)
+	// This protects against regenerative current regardless of wheel speed
+	// Must be called after speed limit to allow speed limiting to set duty cycle first,
+	// then back-EMF protection can override if needed to prevent regeneration
+	apply_back_emf_protection();
 	
 	// Check battery Over-current (read current here in case PWM interrupt for some error was disabled)
 	// Read in assembler to ensure data consistency (conversion overrun)
@@ -1629,6 +1636,81 @@ static void apply_temperature_limiting(void)
 }
 
 
+static void apply_back_emf_protection(void)
+{
+	// Back-EMF protection based on motor speed (ERPS), not wheel speed
+	// This protects against regenerative current in all scenarios:
+	// - Downhill coasting below speed limit
+	// - Sudden assist level reduction
+	// - Pedaling stops while coasting
+	// - Any situation where motor spins fast but duty cycle is low
+	
+	#define REGENERATIVE_CURRENT_THRESHOLD_ADC 8  // ~1.3A (8 * 0.16A) - threshold to detect regeneration
+	#define REGENERATIVE_CURRENT_TARGET_THRESHOLD_ADC 5  // Battery current target must be below this to check for regeneration
+	
+	// Check if speed limiting is active to determine maximum allowed duty cycle
+	uint8_t ui8_max_allowed_duty = PWM_DUTY_CYCLE_MAX;  // Default: no limit
+	if (m_configuration_variables.ui8_wheel_speed_max > 0U) {
+		uint16_t speed_limit_high = (uint16_t)((uint8_t)(m_configuration_variables.ui8_wheel_speed_max + 2U) * (uint8_t)10U);
+		if (ui16_wheel_speed_x10 > speed_limit_high) {
+			// Speed limiting is active - cap duty cycle to speed limit overrun maximum
+			ui8_max_allowed_duty = SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH;
+		}
+	}
+	
+	// Check if motor is spinning fast enough to require protection
+	// Field weakening threshold (490 ERPS) is where back-EMF becomes significant
+	if (ui16_motor_speed_erps > MOTOR_SPEED_FIELD_WEAKENING_MIN) {
+		// Motor is at high speed - ensure minimum duty cycle to prevent back-EMF issues
+		// At high motor speeds, back EMF can exceed applied voltage if duty cycle is too low
+		// This causes regenerative current and potential overvoltage issues
+		uint8_t ui8_min_duty_for_motor_speed = (uint8_t)map_ui16(ui16_motor_speed_erps,
+			MOTOR_SPEED_FIELD_WEAKENING_MIN,  // start requiring minimum at field weakening threshold 490
+			MOTOR_OVER_SPEED_ERPS,            // maximum motor speed 650
+			PWM_DUTY_CYCLE_STARTUP,           // minimum duty cycle at field weakening threshold (30)
+			SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH);                               // minimum duty cycle at max speed
+		
+		// Cap minimum duty cycle to maximum allowed (respects speed limiting)
+		if (ui8_min_duty_for_motor_speed > ui8_max_allowed_duty) {
+			ui8_min_duty_for_motor_speed = ui8_max_allowed_duty;
+		}
+		
+		// Ensure duty cycle target doesn't go below motor-speed-based minimum
+		if (ui8_duty_cycle_target < ui8_min_duty_for_motor_speed) {
+			ui8_duty_cycle_target = ui8_min_duty_for_motor_speed;
+		}
+	}
+	
+	// Additional protection: detect and prevent regenerative current
+	// Regenerative current occurs when battery current target is 0 (or very low)
+	// but actual current is still flowing back to the battery
+	// This happens when back EMF exceeds applied voltage (duty cycle too low for motor speed)
+	// This can occur at ANY wheel speed if motor is spinning fast enough
+	if ((ui8_adc_battery_current_target < REGENERATIVE_CURRENT_TARGET_THRESHOLD_ADC)
+		&& (ui8_adc_battery_current_filtered > REGENERATIVE_CURRENT_THRESHOLD_ADC)) {
+		// Regenerative current detected: increase duty cycle to counteract back EMF
+		// This prevents current from flowing back to battery and protects against overvoltage
+		// Map regenerative current magnitude to required duty cycle increase
+		// Higher regenerative current requires higher duty cycle to counteract
+		uint8_t ui8_regen_duty_cycle = (uint8_t)map_ui8(ui8_adc_battery_current_filtered,
+			REGENERATIVE_CURRENT_THRESHOLD_ADC,  // minimum regenerative current threshold
+			50,                                  // maximum regenerative current to handle (8A)
+			PWM_DUTY_CYCLE_STARTUP,              // minimum duty cycle to counteract regeneration (30)
+			SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH);                                 // maximum duty cycle to counteract regeneration
+		
+		// Cap regeneration counteracting duty cycle to maximum allowed (respects speed limiting)
+		if (ui8_regen_duty_cycle > ui8_max_allowed_duty) {
+			ui8_regen_duty_cycle = ui8_max_allowed_duty;
+		}
+		
+		// Use the higher of: current duty cycle target or regeneration counteracting duty cycle
+		if (ui8_regen_duty_cycle > ui8_duty_cycle_target) {
+			ui8_duty_cycle_target = ui8_regen_duty_cycle;
+		}
+	}
+}
+
+
 static void apply_speed_limit(void)
 {
 	if (ui8_wheel_speed_max > 0U) {
@@ -1643,7 +1725,20 @@ static void apply_speed_limit(void)
                 0U);
 		
 		if (ui16_wheel_speed_x10 > speed_limit_high) {
-			ui8_duty_cycle_target = 0;
+			// set duty cycle target based on assist level (decreases with increased assist level)
+			// Clamp assist level to valid range
+			uint8_t ui8_assist_level_clamped = (ui8_assist_level > TURBO) ? TURBO : ui8_assist_level;
+			// Map assist level (OFF=0, ECO=1, TOUR=2, SPORT=3, TURBO=4) to duty cycle
+			// Higher assist level -> lower duty cycle
+			// this should create a mostly constant power just to overcome the mech. losses:
+			ui8_duty_cycle_target = (uint8_t)map_ui8(ui8_assist_level_clamped,
+					OFF,  // minimum assist level (highest duty cycle)
+					TURBO, // maximum assist level (lowest duty cycle)
+					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH/10, // high value for lower assist levels
+					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_LOW/10); // low value for higher assist levels
+			
+			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
+			// which is called after this function, so it will override if needed
 		}
     }
 }
@@ -2875,14 +2970,27 @@ static void uart_receive_package(void)
 					if (!ui8_delay_display_array[ui8_data_index]) {
 						ui8_menu_counter = 0;
 					}
-					if ((ui8_data_index + 1) < ui8_auto_data_number_display) {
+					// check if delay is 255 (restart sequence from start)
+					if (ui8_delay_display_array[ui8_data_index] == 255) {
+						// restart sequence from the start
+						ui8_menu_counter = 0;
+						ui8_data_index = 0;
+						// delay data function
+						if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
+							ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
+						}
+						else {
+							ui8_delay_display_function  = DELAY_MENU_ON;
+						}
+					}
+					else if ((ui8_data_index + 1) < ui8_auto_data_number_display) {
 						if ((ui8_menu_counter >= (ui8_delay_display_function - 4))||(ui8_assist_level != ui8_assist_level_temp)) {
 							// restart menu counter
 							ui8_menu_counter = 0;
 							// increment data index
 							ui8_data_index++;
 							// delay data function
-							if (ui8_delay_display_array[ui8_data_index]) {
+							if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
 								ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
 							}
 							else {
@@ -3333,9 +3441,17 @@ static void uart_send_package(void)
 					ui16_duty_cycle_percent = (uint16_t) ((ui8_g_duty_cycle * (uint8_t)100) / PWM_DUTY_CYCLE_MAX) - 1;
 					ui16_display_data = (ui16_display_data_factor / ui16_duty_cycle_percent) * 10U;
 				  break;
-				case 13: 
-					// battery voltage not filtered x10
-					ui16_display_data = ui16_display_data_factor / (ui16_battery_voltage_filtered_x10);
+				case 13: // DISPLAY_DATA_SPEED - wheel speed
+					if (ui16_wheel_speed_x10 > 0U) {
+#if UNITS_TYPE == MILES
+						ui16_display_data = (ui16_display_data_factor / ui16_wheel_speed_x10) * 10U;
+#else
+						ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
+#endif
+					}
+					else {
+						ui16_display_data = 0;
+					}
 				  break;
 				default:
 				  break;
