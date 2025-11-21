@@ -15,3 +15,5 @@ bin/
 releases/
 tests/sim/*
 !_tsdz2.cdef
+JavaConfigurator.jar
+src/config.h

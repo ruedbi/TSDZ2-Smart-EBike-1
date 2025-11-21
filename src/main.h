@@ -5,7 +5,7 @@
  *
  * Released under the GPL License, Version 3
  */
-
+// clang-format off
 #ifndef MAIN_H_
 #define MAIN_H_
 
@@ -109,6 +109,12 @@
 // duty cycle
 #define PWM_DUTY_CYCLE_MAX									UINT8_MAX
 #define PWM_DUTY_CYCLE_STARTUP								30    // Initial PWM Duty Cycle at motor startup
+#define SPEED_LIMIT_OVERRUN_DUTY_CYCLE \
+    50  // Fixed PWM Duty Cycle when speed exceeds (limit + 2 km/h)
+#define SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH \
+    100  // High duty cycle for speed limit overrun (lower assist levels)
+#define SPEED_LIMIT_OVERRUN_DUTY_CYCLE_LOW \
+    50  // Low duty cycle for speed limit overrun (higher assist levels)
 
 // ----------------------------------------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------------------------------------------
@@ -123,7 +129,7 @@ visto che è partito con 84us di ritardo rispetto agli altri stati.
 In questo modo il contatore Hall viene allineato allo stesso modo per tutti gli stati, ma sarà
 comunque in ritardo di Tfall per tutti gli stati. Questo ritardo viene gestito con un ulteriore
 offset da sommare al contatore per tutti gli stati.
-Dai test effettuati risulta che Tfall vale circa 66us (16,5 step) a cui va sommato il ritardo fra							   
+Dai test effettuati risulta che Tfall vale circa 66us (16,5 step) a cui va sommato il ritardo fra
 la lettura del contatore Hall e la scrittura dei registri PWM che è sempre uguale a mezzo
 ciclo PWM (1/(19047*2) = 26,25us o 6,5 step).
 Quindi l'offset per gli stati 2,1,4 vale 23 (16,5+6,5) mentre per gli stati 6,3,5

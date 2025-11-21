@@ -5,7 +5,7 @@
  *
  * Released under the GPL License, Version 3
  */
-
+// clang-format off
 #include <stdint.h>
 #include "interrupts.h"
 #include "stm8s.h"
@@ -74,6 +74,10 @@ static uint8_t ui8_ebike_app_controller_counter = 0;
 int main(void) {
     // set clock at the max 16 MHz
     CLK_HSIPrescalerConfig(CLK_PRESCALER_HSIDIV1);
+
+    // enable SWIM interface at power up
+    // Clear SWD bit (SWIM Disable) to enable SWIM interface
+    CFG->GCR &= (uint8_t)(~CFG_GCR_SWD);
 
     brake_init();
     /* ++++++++++++++
