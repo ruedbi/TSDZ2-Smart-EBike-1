@@ -2953,17 +2953,17 @@ static void uart_receive_package(void)
 						ui8_display_data_enabled = 1;
 						// restart menu counter
 						ui8_menu_counter = 0;
-						// set data index
-						ui8_data_index = 0;
-						// assist level temp, ignore first change
-						ui8_assist_level_temp = ui8_assist_level;
-						// delay data function
-						if (ui8_delay_display_array[ui8_data_index]) {
-							ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
-						}
-						else {
-							ui8_delay_display_function  = DELAY_MENU_ON;
-						}
+					// set data index
+					ui8_data_index = 0;
+					// assist level temp, ignore first change
+					ui8_assist_level_temp = ui8_assist_level;
+					// delay data function
+					if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
+						ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
+					}
+					else {
+						ui8_delay_display_function  = DELAY_MENU_ON;
+					}
 					}
 					
 					// restart menu counter if data delay is zero
