@@ -1567,9 +1567,10 @@ static void apply_speed_limit(void)
                 ui8_adc_battery_current_target,
                 0U);
 		
-		if (ui16_wheel_speed_x10 > speed_limit_high) {
+		if ((ui16_wheel_speed_x10 > speed_limit_high) || (ui8_assist_level == OFF)) {
 			// set duty cycle target based on assist level (decreases with increased assist level)
 			// Clamp assist level to valid range
+			// also with no assist, there is minimum assist ;-)
 			uint8_t ui8_assist_level_clamped = (ui8_assist_level > TURBO) ? TURBO : ui8_assist_level;
 			// Map assist level (OFF=0, ECO=1, TOUR=2, SPORT=3, TURBO=4) to duty cycle
 			// Higher assist level -> lower duty cycle
@@ -1579,6 +1580,23 @@ static void apply_speed_limit(void)
 					TURBO, // maximum assist level (lowest duty cycle)
 					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH/10, // high value for lower assist levels
 					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_LOW/10); // low value for higher assist levels
+			
+			// Clamp target power to match the limited duty cycle
+			// Calculate maximum allowed power based on duty cycle: power is roughly proportional to duty cycle
+			// For speed limit overrun, we want minimal power just to overcome mechanical losses
+			// Calculate max allowed battery current based on the duty cycle limit
+			// Use a conservative power limit that matches the low duty cycle
+			uint8_t ui8_max_allowed_current_for_duty = (uint8_t)((uint16_t)ui8_duty_cycle_target * ui8_adc_battery_current_max) / PWM_DUTY_CYCLE_MAX;
+			if (ui8_adc_battery_current_target < ui8_max_allowed_current_for_duty) {
+				ui8_adc_battery_current_target = ui8_max_allowed_current_for_duty;
+			}
+			
+			// Limit target power to maximum 0.5A when speed limit is exceeded
+			// 0.5A = 0.5 / 0.16 = 3.125 ADC steps, use 3 for safety margin
+			#define SPEED_LIMIT_MAX_CURRENT_ADC 3  // 0.5A maximum
+			if (ui8_adc_battery_current_target > SPEED_LIMIT_MAX_CURRENT_ADC) {
+				ui8_adc_battery_current_target = SPEED_LIMIT_MAX_CURRENT_ADC;
+			}
 			
 			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
 			// which is called after this function, so it will override if needed
