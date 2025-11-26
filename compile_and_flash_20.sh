@@ -1,27 +1,43 @@
 #!/bin/bash
 set -e
 
-version="20.1C.6-5"
-settings_date=$1
+if [ "$1" == "debug" ]; then
+	CFLAGS=-DDEBUG_BUILD
+	MODE=debug
+	echo "Debug build"
+else
+	CFLAGS=-DRELEASE_BUILD
+	MODE=release
+	echo "Release build"
+fi
 
-release_folder=$(pwd)/releases
+version="v289_${MODE}_current_limited"
+settings_date=$(date +%Y%m%d)
+settings_time=$(date +%H%M)
+
+release_folder=/mnt/c/Users/Rüdiger/Meine\ Ablage/DriveSyncFiles/ebike
+release_folder2=$(pwd)/releases
 backup_folder=$(pwd)/releases/backup
 
 cd src
-
 # Clean existing
 rm -rf main.hex || true
-make clean || true
+# make clean || true
 
 # Build firmware
 echo Build started...
-make all
+make all CFLAGS=$CFLAGS
 
 # Save new firmware
 echo Copying firmware to release folder.
 echo $release_folder/TSDZ2-$version-$settings_date.hex
 mkdir -p "$release_folder"
+mkdir -p "$release_folder2"
 yes | cp -rf ../bin/main.hex "$release_folder/TSDZ2-$version-$settings_date.hex"
+yes | cp -rf ../bin/main.hex "$release_folder2/TSDZ2-$version-$settings_date.hex"
+
+# ruedbi:
+exit 0
 
 backup=no
 while true; do

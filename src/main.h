@@ -111,12 +111,6 @@
 // duty cycle
 #define PWM_DUTY_CYCLE_MAX									UINT8_MAX
 #define PWM_DUTY_CYCLE_STARTUP								30    // Initial PWM Duty Cycle at motor startup
-#define SPEED_LIMIT_OVERRUN_DUTY_CYCLE \
-    50  // Fixed PWM Duty Cycle when speed exceeds (limit + 2 km/h)
-#define SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH \
-    100  // High duty cycle for speed limit overrun (lower assist levels)
-#define SPEED_LIMIT_OVERRUN_DUTY_CYCLE_LOW \
-    50  // Low duty cycle for speed limit overrun (higher assist levels)
 
 // ----------------------------------------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------------------------------------------
@@ -131,7 +125,7 @@ visto che è partito con 84us di ritardo rispetto agli altri stati.
 In questo modo il contatore Hall viene allineato allo stesso modo per tutti gli stati, ma sarà
 comunque in ritardo di Tfall per tutti gli stati. Questo ritardo viene gestito con un ulteriore
 offset da sommare al contatore per tutti gli stati.
-Dai test effettuati risulta che Tfall vale circa 66us (16,5 step) a cui va sommato il ritardo fra
+Dai test effettuati risulta che Tfall vale circa 66us (16,5 step) a cui va sommato il ritardo fra							   
 la lettura del contatore Hall e la scrittura dei registri PWM che è sempre uguale a mezzo
 ciclo PWM (1/(19047*2) = 26,25us o 6,5 step).
 Quindi l'offset per gli stati 2,1,4 vale 23 (16,5+6,5) mentre per gli stati 6,3,5
@@ -226,6 +220,29 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 //#define ADC_10_BIT_BATTERY_CURRENT_MAX				124	// 20 amps // 1 = 0.16 Amp
 //#define ADC_10_BIT_BATTERY_CURRENT_MAX				136	// 22 amps // 1 = 0.16 Amp
 #define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX			187	// 30 amps // 1 = 0.16 Amp
+
+#if ENABLE_VLCD5 // ruedbi
+#define MY_HW_CURRENT_LIMIT 15
+// must be <= MY_HW_CURRENT_LIMIT:
+#define MY_BATTERY_CURRENT_LIMIT 14
+// assert when BATTERY_CURRENT_MAX > MY_BATTERY_CURRENT_LIMIT
+#if BATTERY_CURRENT_MAX > MY_BATTERY_CURRENT_LIMIT
+#error "BATTERY_CURRENT_MAX exceeded MY_BATTERY_CURRENT_LIMIT"
+#endif
+
+#undef ADC_10_BIT_BATTERY_EXTRACURRENT
+#define ADC_10_BIT_BATTERY_EXTRACURRENT				((MY_HW_CURRENT_LIMIT-BATTERY_CURRENT_MAX)*6) // overcurrent must not exceed HW limit of MY_BATTERY_CURRENT_LIMIT
+
+#undef ADC_10_BIT_BATTERY_CURRENT_MAX
+#define ADC_10_BIT_BATTERY_CURRENT_MAX				(BATTERY_CURRENT_MAX*6)
+
+// ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX represents the hardware safety limit for the motor phase current (set to ~30A by default). It is used in three key ways:
+// Safety Ceiling (Initialization & Cap) In src/ebike_app.c, it initializes the runtime variable ui8_adc_motor_phase_current_max. Even if the software calculates a higher allowed current based on battery limits, this constant acts as a hard ceiling (lines 424–426) to prevent the controller from exceeding its hardware rating.
+// Scaling Reference It is used to proportionally scale the motor phase current limit based on the configured battery current limit (line 421). The system calculates: Limit = Battery_Current_Max * (Phase_Max_Constant / Battery_Max_Constant) This ensures the phase current limit scales naturally with your battery settings but never exceeds the hardware maximum.
+// Runtime Protection In the main PWM control loop (src/motor.c, line 809), the current estimated phase current is compared against this maximum. If the phase current exceeds the limit, the controller immediately ramps down the PWM duty cycle to reduce current.
+#undef ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX
+#define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX			(MY_HW_CURRENT_LIMIT*6)
+#endif
 /*---------------------------------------------------------
  NOTE: regarding ADC battery current max
 
@@ -330,6 +347,7 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define TURBO										4
 
 // assist pedal level mask
+// hex values for DZ40 MINI, ekd01 levels in order: 10 / 80 / 40 / 2 / 4 / 8
 #define ASSIST_PEDAL_LEVEL0							0x10
 #define ASSIST_PEDAL_LEVEL1							0x40
 #define ASSIST_PEDAL_LEVEL2							0x02

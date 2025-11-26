@@ -28,6 +28,7 @@ static uint8_t ui8_assist_level_5_flag = 0;
 static uint8_t ui8_riding_mode_temp = 0;
 static uint8_t ui8_lights_flag = 0;
 static uint8_t ui8_lights_on_5s = 0;
+static uint8_t ui8_display_lights_control_active = 0;
 static uint8_t ui8_menu_flag = 0;
 static uint8_t ui8_menu_index = 0;
 static uint8_t ui8_data_index = 0;
@@ -41,7 +42,20 @@ static uint16_t ui16_data_value = 0;
 static uint8_t ui8_auto_display_data_flag = 0;
 static uint8_t ui8_auto_display_data_status = 0;
 static uint8_t ui8_auto_data_number_display = AUTO_DATA_NUMBER_DISPLAY;
+static uint8_t ui8_sequence_repeat_count = 0;
 static uint16_t ui16_display_data_factor = 0;
+
+// ruedbi: Adaptive display scaling: enum for value types
+typedef enum {
+	DISPLAY_VALUE_TYPE_BATTERY_CURRENT_TARGET = 0,
+	DISPLAY_VALUE_TYPE_DUTY_CYCLE_PERCENT,
+	DISPLAY_VALUE_TYPE_BATTERY_VOLTAGE,
+	DISPLAY_VALUE_TYPE_WHEEL_SPEED,
+	DISPLAY_VALUE_TYPE_COUNT  // Must be last - used for array size
+} display_value_type_t;
+
+// Track maximum values seen for each display value type (for adaptive scaling)
+static uint16_t ui16_display_value_max_array[DISPLAY_VALUE_TYPE_COUNT] = {0};
 static uint8_t ui8_delay_display_function = DELAY_MENU_ON;
 static uint8_t ui8_display_data_on_startup = DATA_DISPLAY_ON_STARTUP;
 static uint8_t ui8_set_parameter_enabled_temp = ENABLE_SET_PARAMETER_ON_STARTUP;
@@ -64,7 +78,8 @@ static uint8_t ui8_riding_mode_parameter = 0;
 volatile uint8_t ui8_system_state = NO_ERROR;
 volatile uint8_t ui8_motor_enabled = 1;
 static uint8_t ui8_assist_without_pedal_rotation_threshold = ASSISTANCE_WITHOUT_PEDAL_ROTATION_THRESHOLD;
-static uint8_t ui8_lights_state = 0;
+// ruedbi: default lights ON at power-up; display takes control after first user light action
+static uint8_t ui8_lights_state = 1;
 static uint8_t ui8_lights_button_flag = 0;
 static uint8_t ui8_optional_ADC_function = OPTIONAL_ADC_FUNCTION;
 static uint8_t ui8_walk_assist_level = 0;
@@ -155,6 +170,10 @@ static uint8_t ui8_eMTB_based_on_power = eMTB_BASED_ON_POWER;
 static uint16_t ui16_wheel_speed_x10 = 0;
 static uint8_t ui8_wheel_speed_max = WHEEL_MAX_SPEED;
 static uint8_t ui8_wheel_speed_max_array[2] = {WHEEL_MAX_SPEED,STREET_MODE_SPEED_LIMIT};
+// max offroad speed from display (23-35 km/h) for scaled speed: displayed = 25*real/max_offroad
+static uint8_t ui8_max_offroad_speed_from_display = WHEEL_MAX_SPEED;
+// tracks which speed limit is active in offroad mode: 0 = offroad (scaled), 1 = street (25 km/h)
+static uint8_t ui8_speed_limit_in_offroad_mode = OFFROAD_MODE;
 
 // wheel speed display
 static uint8_t ui8_display_ready_flag = 0;
@@ -269,7 +288,6 @@ static void apply_walk_assist(void);
 static void apply_throttle(void);
 static void apply_temperature_limiting(void);
 static void apply_speed_limit(void);
-static void apply_back_emf_protection(void);
 
 // functions for oem display
 static void calc_oem_wheel_speed(void);
@@ -516,12 +534,6 @@ static void ebike_control_motor(void)
     // speed limit
     apply_speed_limit();
 	
-	// Back-EMF protection based on motor speed (ERPS)
-	// This protects against regenerative current regardless of wheel speed
-	// Must be called after speed limit to allow speed limiting to set duty cycle first,
-	// then back-EMF protection can override if needed to prevent regeneration
-	apply_back_emf_protection();
-	
 	// Check battery Over-current (read current here in case PWM interrupt for some error was disabled)
 	// Read in assembler to ensure data consistency (conversion overrun)
 	// E07 (E04 blinking for XH18)
@@ -545,6 +557,12 @@ static void ebike_control_motor(void)
 		if (ui8_error_battery_overcurrent_counter >= ui8_battery_overcurrent_delay) {
 			ui8_system_state = ui8_error_battery_overcurrent;
 		}
+	}
+
+	// reset overcurrent error when bike has stopped
+	if ((ui8_system_state == ERROR_BATTERY_OVERCURRENT) && (ui16_wheel_speed_x10 == 0U)) {
+		ui8_system_state = NO_ERROR;
+		ui8_error_battery_overcurrent_counter = 0;
 	}
 	
     // reset control parameters if... (safety)
@@ -1636,129 +1654,23 @@ static void apply_temperature_limiting(void)
 }
 
 
-static void apply_back_emf_protection(void)
-{
-	// Back-EMF protection based on motor speed (ERPS), not wheel speed
-	// This protects against regenerative current in all scenarios:
-	// - Downhill coasting below speed limit
-	// - Sudden assist level reduction
-	// - Pedaling stops while coasting
-	// - Any situation where motor spins fast but duty cycle is low
-	
-	#define REGENERATIVE_CURRENT_THRESHOLD_ADC 8  // ~1.3A (8 * 0.16A) - threshold to detect regeneration
-	#define REGENERATIVE_CURRENT_TARGET_THRESHOLD_ADC 5  // Battery current target must be below this to check for regeneration
-	
-	// Check if speed limiting is active to determine maximum allowed duty cycle
-	uint8_t ui8_max_allowed_duty = PWM_DUTY_CYCLE_MAX;  // Default: no limit
-	if (m_configuration_variables.ui8_wheel_speed_max > 0U) {
-		uint16_t speed_limit_high = (uint16_t)((uint8_t)(m_configuration_variables.ui8_wheel_speed_max + 2U) * (uint8_t)10U);
-		if (ui16_wheel_speed_x10 > speed_limit_high) {
-			// Speed limiting is active - cap duty cycle to speed limit overrun maximum
-			ui8_max_allowed_duty = SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH;
-		}
-	}
-	
-	// Check if motor is spinning fast enough to require protection
-	// Field weakening threshold (490 ERPS) is where back-EMF becomes significant
-	if (ui16_motor_speed_erps > MOTOR_SPEED_FIELD_WEAKENING_MIN) {
-		// Motor is at high speed - ensure minimum duty cycle to prevent back-EMF issues
-		// At high motor speeds, back EMF can exceed applied voltage if duty cycle is too low
-		// This causes regenerative current and potential overvoltage issues
-		uint8_t ui8_min_duty_for_motor_speed = (uint8_t)map_ui16(ui16_motor_speed_erps,
-			MOTOR_SPEED_FIELD_WEAKENING_MIN,  // start requiring minimum at field weakening threshold 490
-			MOTOR_OVER_SPEED_ERPS,            // maximum motor speed 650
-			PWM_DUTY_CYCLE_STARTUP,           // minimum duty cycle at field weakening threshold (30)
-			SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH);                               // minimum duty cycle at max speed
-		
-		// Cap minimum duty cycle to maximum allowed (respects speed limiting)
-		if (ui8_min_duty_for_motor_speed > ui8_max_allowed_duty) {
-			ui8_min_duty_for_motor_speed = ui8_max_allowed_duty;
-		}
-		
-		// Ensure duty cycle target doesn't go below motor-speed-based minimum
-		if (ui8_duty_cycle_target < ui8_min_duty_for_motor_speed) {
-			ui8_duty_cycle_target = ui8_min_duty_for_motor_speed;
-		}
-	}
-	
-	// Additional protection: detect and prevent regenerative current
-	// Regenerative current occurs when battery current target is 0 (or very low)
-	// but actual current is still flowing back to the battery
-	// This happens when back EMF exceeds applied voltage (duty cycle too low for motor speed)
-	// This can occur at ANY wheel speed if motor is spinning fast enough
-	if ((ui8_adc_battery_current_target < REGENERATIVE_CURRENT_TARGET_THRESHOLD_ADC)
-		&& (ui8_adc_battery_current_filtered > REGENERATIVE_CURRENT_THRESHOLD_ADC)) {
-		// Regenerative current detected: increase duty cycle to counteract back EMF
-		// This prevents current from flowing back to battery and protects against overvoltage
-		// Map regenerative current magnitude to required duty cycle increase
-		// Higher regenerative current requires higher duty cycle to counteract
-		uint8_t ui8_regen_duty_cycle = (uint8_t)map_ui8(ui8_adc_battery_current_filtered,
-			REGENERATIVE_CURRENT_THRESHOLD_ADC,  // minimum regenerative current threshold
-			50,                                  // maximum regenerative current to handle (8A)
-			PWM_DUTY_CYCLE_STARTUP,              // minimum duty cycle to counteract regeneration (30)
-			SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH);                                 // maximum duty cycle to counteract regeneration
-		
-		// Cap regeneration counteracting duty cycle to maximum allowed (respects speed limiting)
-		if (ui8_regen_duty_cycle > ui8_max_allowed_duty) {
-			ui8_regen_duty_cycle = ui8_max_allowed_duty;
-		}
-		
-		// Use the higher of: current duty cycle target or regeneration counteracting duty cycle
-		if (ui8_regen_duty_cycle > ui8_duty_cycle_target) {
-			ui8_duty_cycle_target = ui8_regen_duty_cycle;
-		}
-	}
-}
-
-
 static void apply_speed_limit(void)
 {
 	if (ui8_wheel_speed_max > 0U) {
 		uint16_t speed_limit_low  = (uint16_t)((uint8_t)(ui8_wheel_speed_max - 2U) * (uint8_t)10U); // casting literal to uint8_t ensures usage of MUL X,A
 		uint16_t speed_limit_high = (uint16_t)((uint8_t)(ui8_wheel_speed_max + 2U) * (uint8_t)10U);
-		
-        // set battery current target
+
+		// set battery current target
         ui8_adc_battery_current_target = (uint8_t)map_ui16(ui16_wheel_speed_x10,
-                speed_limit_low,
-                speed_limit_high,
-                ui8_adc_battery_current_target,
-                0U);
-		
-		if ((ui16_wheel_speed_x10 > speed_limit_high) || (ui8_assist_level == OFF)) {
-			// set duty cycle target based on assist level (decreases with increased assist level)
-			// Clamp assist level to valid range
-			// also with no assist, there is minimum assist ;-)
-			uint8_t ui8_assist_level_clamped = (ui8_assist_level > TURBO) ? TURBO : ui8_assist_level;
-			// Map assist level (OFF=0, ECO=1, TOUR=2, SPORT=3, TURBO=4) to duty cycle
-			// Higher assist level -> lower duty cycle
-			// this should create a mostly constant power just to overcome the mech. losses:
-			ui8_duty_cycle_target = (uint8_t)map_ui8(ui8_assist_level_clamped,
-					OFF,  // minimum assist level (highest duty cycle)
-					TURBO, // maximum assist level (lowest duty cycle)
-					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH/10, // high value for lower assist levels
-					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_LOW/10); // low value for higher assist levels
-			
-			// Clamp target power to match the limited duty cycle
-			// Calculate maximum allowed power based on duty cycle: power is roughly proportional to duty cycle
-			// For speed limit overrun, we want minimal power just to overcome mechanical losses
-			// Calculate max allowed battery current based on the duty cycle limit
-			// Use a conservative power limit that matches the low duty cycle
-			uint8_t ui8_max_allowed_current_for_duty = (uint8_t)((uint16_t)ui8_duty_cycle_target * ui8_adc_battery_current_max) / PWM_DUTY_CYCLE_MAX;
-			if (ui8_adc_battery_current_target < ui8_max_allowed_current_for_duty) {
-				ui8_adc_battery_current_target = ui8_max_allowed_current_for_duty;
-			}
-			
-			// Limit target power to maximum 0.5A when speed limit is exceeded
-			// 0.5A = 0.5 / 0.16 = 3.125 ADC steps, use 3 for safety margin
-			#define SPEED_LIMIT_MAX_CURRENT_ADC 3  // 0.5A maximum
-			if (ui8_adc_battery_current_target > SPEED_LIMIT_MAX_CURRENT_ADC) {
-				ui8_adc_battery_current_target = SPEED_LIMIT_MAX_CURRENT_ADC;
-			}
-			
-			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
-			// which is called after this function, so it will override if needed
+				speed_limit_low,
+				speed_limit_high,
+				ui8_adc_battery_current_target,
+				0U);
+
+		if (ui16_wheel_speed_x10 > speed_limit_high) {
+			ui8_duty_cycle_target = 0;
 		}
-    }
+	}
 }
 
 
@@ -1968,6 +1880,13 @@ static void check_system(void)
 // E09 shared with ERROR_WRITE_EEPROM
 #define MOTOR_CHECK_TIME_GOES_ALONE_TRESHOLD         	60 // 60 * 100ms = 6.0 seconds
 #define MOTOR_CHECK_ERPS_THRESHOLD                  	40 // 40 ERPS
+// Typical Values
+// 0: no torque applied
+// 1–50: light pressure
+// 50–100: moderate pressure
+// 100–150: strong pressure
+// 120: threshold used for "assist without pedal rotation" (line 734)
+#define MOTOR_CHECK_PEDAL_TORQUE_THRESHOLD			60 // Threshold for strong pedal force (ADC delta)
 static uint8_t ui8_riding_torque_mode = 0;
 static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 	
@@ -1982,11 +1901,18 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 	else {
 		ui8_riding_torque_mode = 0;
 	}
-	// Check if the motor goes alone and with current or duty cycle target = 0 (safety)
+	// Check if the motor goes alone and with current AND duty cycle target = 0 (safety)
+	// ruedbi: This protects against unwanted motor rotation that could turn pedals due to SW/HW bugs
+	// Check applies to:
+	// - All modes when assist level is OFF (most critical safety case)
+	// - Torque-based modes (POWER, TORQUE, HYBRID, eMTB) and CADENCE mode when assist is ON
+	// Condition: motor rotating fast, no command (both targets = 0), user not pedaling hard
 	if ((ui16_motor_speed_erps > MOTOR_CHECK_ERPS_THRESHOLD)
-		&&((ui8_riding_torque_mode) || (m_configuration_variables.ui8_riding_mode == CADENCE_ASSIST_MODE))
-		&& (ui8_adc_battery_current_target == 0U || ui8_duty_cycle_target == 0U)) {
-			ui8_motor_check_goes_alone_timer++;
+	&& ((ui8_assist_level == OFF)  // Always check when assist is OFF (critical safety)
+		|| ((ui8_riding_torque_mode) || (m_configuration_variables.ui8_riding_mode == CADENCE_ASSIST_MODE)))
+	&& (ui8_adc_battery_current_target == 0U && ui8_duty_cycle_target == 0U)  // Both must be 0 (AND, not OR)
+	&& (ui16_adc_pedal_torque_delta < MOTOR_CHECK_PEDAL_TORQUE_THRESHOLD)) {  // User not pedaling hard
+		ui8_motor_check_goes_alone_timer++;
 	}
 	else {
 		ui8_motor_check_goes_alone_timer = 0;
@@ -2410,7 +2336,7 @@ static void uart_receive_package(void)
 			// mask assist level from display
 			ui8_assist_level_mask = ui8_rx_buffer[1] & 0xDE; // mask: 11011110
 			ui8_assist_level_5_flag = 0;
-			
+
 			// set assist level
 			switch (ui8_assist_level_mask) {
 				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
@@ -2430,6 +2356,13 @@ static void uart_receive_package(void)
 #endif
 			}
 			
+			// offroad mode: OFF->non-OFF gesture toggles between offroad and street speed limit
+			if ((m_configuration_variables.ui8_street_mode_enabled == OFFROAD_MODE)
+				&& (ui8_assist_level_temp == OFF) && (ui8_assist_level != OFF)) {
+				ui8_speed_limit_in_offroad_mode = 1U - ui8_speed_limit_in_offroad_mode;
+				ui8_assist_level_temp = ui8_assist_level;  // avoid double-trigger on repeated 0x00 before 0x02
+			}
+			
 			if (!ui8_display_ready_flag) {
 				// assist level temp at power on
 				ui8_assist_level_temp = ui8_assist_level;
@@ -2439,6 +2372,7 @@ static void uart_receive_package(void)
 			
 			// display lights button pressed:
 			if (ui8_lights_button_flag) {
+				// display light control is disabled; keep lights always on
 				// lights off:
 				if (((!ui8_lights_flag)
 				 &&((m_configuration_variables.ui8_set_parameter_enabled)
@@ -2455,12 +2389,18 @@ static void uart_receive_package(void)
 					{
 						// set menu flag
 						ui8_menu_flag = 1;
-						
-						// set menu index
+
+						// set the new / next menu index:
+#if ENABLE_DZ40MINI_AS_VLCD5
+						// ruedbi: make the menu roll over to the first item (dz40mini)
 						if (++ui8_menu_index > 3) {
 							ui8_menu_index = 1;
 						}
-						
+#else
+						if (++ui8_menu_index > 3) {
+							ui8_menu_index = 3;
+						}
+#endif
 						// display status alternative lights configuration
 						ui8_display_alternative_lights_configuration = 0;
 						
@@ -2672,6 +2612,7 @@ static void uart_receive_package(void)
 									// change street mode
 									m_configuration_variables.ui8_street_mode_enabled = !m_configuration_variables.ui8_street_mode_enabled;
 									ui8_display_function_status[0][ECO] = m_configuration_variables.ui8_street_mode_enabled;
+									ui8_speed_limit_in_offroad_mode = OFFROAD_MODE;  // reset offroad toggle when switching mode
 									break;
 								case 2:																		 
 									// for restore startup boost
@@ -2973,10 +2914,12 @@ static void uart_receive_package(void)
 						ui8_menu_counter = 0;
 					// set data index
 					ui8_data_index = 0;
+					// reset sequence repeat count
+					ui8_sequence_repeat_count = 0;
 					// assist level temp, ignore first change
 					ui8_assist_level_temp = ui8_assist_level;
 					// delay data function
-					if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
+					if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255) && (ui8_delay_display_array[ui8_data_index] != 254)) {
 						ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
 					}
 					else {
@@ -2988,17 +2931,39 @@ static void uart_receive_package(void)
 					if (!ui8_delay_display_array[ui8_data_index]) {
 						ui8_menu_counter = 0;
 					}
-					// check if delay is 255 (restart sequence from start)
+					// check if delay is 255 (restart sequence from start, endless)
 					if (ui8_delay_display_array[ui8_data_index] == 255) {
 						// restart sequence from the start
 						ui8_menu_counter = 0;
 						ui8_data_index = 0;
 						// delay data function
-						if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
+						if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255) && (ui8_delay_display_array[ui8_data_index] != 254)) {
 							ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
 						}
 						else {
 							ui8_delay_display_function  = DELAY_MENU_ON;
+						}
+					}
+					// check if delay is 254 (restart sequence from start, 3 times only)
+					else if (ui8_delay_display_array[ui8_data_index] == 254) {
+						// check if we've repeated less than 3 times
+						if (ui8_sequence_repeat_count < 5) {
+							// increment repeat count
+							ui8_sequence_repeat_count++;
+							// restart sequence from the start
+							ui8_menu_counter = 0;
+							ui8_data_index = 0;
+							// delay data function
+							if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255) && (ui8_delay_display_array[ui8_data_index] != 254)) {
+								ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
+							}
+							else {
+								ui8_delay_display_function  = DELAY_MENU_ON;
+							}
+						}
+						else {
+							// stop sequence after 3 repetitions
+							ui8_auto_display_data_status = 0;
 						}
 					}
 					else if ((ui8_data_index + 1) < ui8_auto_data_number_display) {
@@ -3008,7 +2973,7 @@ static void uart_receive_package(void)
 							// increment data index
 							ui8_data_index++;
 							// delay data function
-							if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
+							if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255) && (ui8_delay_display_array[ui8_data_index] != 254)) {
 								ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
 							}
 							else {
@@ -3036,13 +3001,8 @@ static void uart_receive_package(void)
 			
 			// set lights
 #if ENABLE_LIGHTS
-			// switch on/switch off lights
-			if ((ui8_lights_flag)||(ui8_lights_on_5s)) {
-				ui8_lights_state = 1;
-			}
-			else {
-				ui8_lights_state = 0;
-			}
+			// force lights always on; ignore display on/off control
+			ui8_lights_state = 1;
 #endif
 			
 			// ui8_rx_buffer[2] current max?
@@ -3056,10 +3016,23 @@ static void uart_receive_package(void)
 			// ui8_rx_buffer[4] test?
 			
 #if ENABLE_WHEEL_MAX_SPEED_FROM_DISPLAY
-			// set wheel max speed from display
-			ui8_wheel_speed_max_array[OFFROAD_MODE] = ui8_rx_buffer[5];
+			// set wheel max offroad speed from display (<=35 km/h); street limit can only be lowered
+			if (ui8_rx_buffer[5] <= 35U) {
+				ui8_wheel_speed_max_array[OFFROAD_MODE] = ui8_rx_buffer[5];
+				ui8_max_offroad_speed_from_display = ui8_rx_buffer[5];
+			} else {
+				ui8_wheel_speed_max_array[OFFROAD_MODE] = 35;
+				ui8_max_offroad_speed_from_display = 35;
+			}
 			if (ui8_wheel_speed_max_array[STREET_MODE] > ui8_wheel_speed_max_array[OFFROAD_MODE]) {
 				ui8_wheel_speed_max_array[STREET_MODE] = ui8_wheel_speed_max_array[OFFROAD_MODE];
+			}
+			// ruedbi: also get the wheel size from the display via ui8_oem_wheel_diameter; 
+			// if value is smaller than the real size, the bike will drive faster than it should.
+			if( ui8_oem_wheel_diameter >= 26 && ui8_oem_wheel_diameter <= 29) {
+				// override wheel perimeter from display: convert diameter (inches) to perimeter (mm)
+				// Conversion: perimeter_mm = diameter_inches * 25.4 * π ≈ diameter_inches * 80
+				m_configuration_variables.ui16_wheel_perimeter = (uint16_t)(ui8_oem_wheel_diameter * 80U);
 			}
 #endif
 			
@@ -3076,7 +3049,12 @@ static void uart_receive_package(void)
 				ui8_wheel_speed_max = WALK_ASSIST_THRESHOLD_SPEED;
 			}
 			else {
-				ui8_wheel_speed_max = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
+				// offroad mode: use toggle to select offroad or street limit
+				uint8_t idx = m_configuration_variables.ui8_street_mode_enabled;
+				if ((idx == OFFROAD_MODE) && (ui8_speed_limit_in_offroad_mode == STREET_MODE))
+					m_configuration_variables.ui8_wheel_speed_max = STREET_MODE_SPEED_LIMIT;
+				else
+				    m_configuration_variables.ui8_wheel_speed_max = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
 			}
 			
 			// current limit with power limit
@@ -3102,12 +3080,93 @@ static void uart_receive_package(void)
 	}
 }
 
+/**
+ * ruedbi: Calculate adaptive scaled display data value
+ * 
+ * This function scales input values so that the display always shows values <= 99.
+ * The scaling is adaptive: for each value type (identified by enum), the function
+ * tracks the maximum value seen so far and scales all values of that type so that
+ * the maximum maps to 99.
+ * 
+ * @param ui16_value The raw value to be displayed
+ * @param value_type The type identifier (enum) for this value
+ * @return ui16_display_data value that will display the scaled value (0-99.9)
+ */
+ static uint16_t calc_adaptive_display_data(uint16_t ui16_value, display_value_type_t value_type)
+ {
+	 // Validate value type
+	 if (value_type >= DISPLAY_VALUE_TYPE_COUNT) {
+		 return 0x0707;
+	 }
+	 
+	 // Ignore zero values
+	 if (ui16_value == 0) {
+		 return 0x0707;
+	 }
+	 
+	 // Update maximum value seen for this type
+	 if (ui16_value > ui16_display_value_max_array[value_type]) {
+		 ui16_display_value_max_array[value_type] = ui16_value;
+	 }
+	 
+	 // Get the maximum value for this type
+	 uint16_t ui16_max_value = ui16_display_value_max_array[value_type];
+	 
+	 if( ui16_max_value >= 1000 ) {
+		return ui16_display_data_factor / (ui16_value / 10U);
+		// return (ui16_display_data_factor / (ui16_value))* 10U; // same
+	} else if( ui16_max_value >= 100 ) {
+		return ui16_display_data_factor / ui16_value  ; // safe
+	} else if ( ui16_max_value >= 10 ) {
+		return ui16_display_data_factor / (ui16_value * 10U); // safe
+	} else {
+		return ui16_display_data_factor / (ui16_value * 100U);
+	}
+ }
+ 
+	 
+ /** ruedbi
+ * @brief Sends display data as a package over UART.
+ * my displays: DZ40 mini, EKD01
+ * Overview: https://www.voltriderz.com/de/tongsheng-displays/
+ *
+ * This function is responsible for transmitting a data package
+ * through the UART interface. It prepares the data and handles
+ * the communication protocol to ensure the package is sent correctly.
+ * https://github.com/hurzhurz/tsdz2/blob/master/serial-communication.md
+ * Serial communication
+The communication between LCD and motor controller is a simple serial TTL-level connection with a
+baudrate of 9600. For each direction (motor to LCD / LCD to motor), There is one data message/packet
+format, that is repeated multiple times per second.
 
+Motor to LCD
+Example message:
+
+43 00 01 51 51 00 07 07 F4
+Send frequency: 8 per second Content:
+
+Byte
+index.
+    |example|description
+0	0x43	Start-Byte
+1	0x00	Battery level
+2	0x01	Motor status flags
+3	0x51	Pedal torque-sensor "tara" value
+            or: measured current *10
+4	0x51	Pedal torque-sensor actual value
+            or: measured power *10
+5	0x00	Error code
+6	0x07	Speedsensor (LOW part of 16bit int)
+7	0x07	Speedsensor (HIGH part of 16bit int)
+8	0xF4	Checksum
+
+ */
+// called every 4th cycle of the main loop, means every 100ms
 static void uart_send_package(void)
 {
 	uint8_t ui8_i;
 	uint8_t ui8_tx_check_code;
-	
+
 	// display ready
 	if (ui8_display_ready_flag) {
 		// send the data to the LCD
@@ -3150,7 +3209,8 @@ static void uart_send_package(void)
 				ui8_display_fault_code = ERROR_OVERVOLTAGE; // Fault overvoltage
 				break;
 		}
-#else // ENABLE_VLCD5 or ENABLE_850C or ENABLE_EKD01
+
+#else // ENABLE_VLCD5 or ENABLE_850C or ENABLE_EKD01 or ENABLE_DZ40MINI_AS_VLCD5
 		switch (ui8_battery_state_of_charge) {
 			case 0:
 				ui8_working_status |= 0x01; // bit0 = 1 (battery undervoltage)
@@ -3172,6 +3232,7 @@ static void uart_send_package(void)
 				ui8_tx_buffer[1] = 0x08; // Battery 4/6
 				break;
 			case 6:
+				// on the DZ40mini this is already 5/5
 				ui8_tx_buffer[1] = 0x0A; // Battery 5/6
 				break;
 			case 7:
@@ -3189,7 +3250,17 @@ static void uart_send_package(void)
 #endif
 		
 		// reserved for VLCD5, torque sensor value TE and TE1
-#if ENABLE_VLCD5
+#if ENABLE_DZ40MINI_AS_VLCD5
+		// // dz40mini format
+		// ui8_tx_buffer[3] = 0x46;
+		// ui8_tx_buffer[4] = 0x46;
+        ui8_tx_buffer[3] = 0; // don't care
+        // battery power filtered x 10 for display data
+        ui16_battery_power_filtered_x10 =
+                filter(ui16_battery_power_x10, ui16_battery_power_filtered_x10, 8);
+        ui8_tx_buffer[4] = (uint8_t)(ui16_battery_power_filtered_x10 / 100);
+
+#elif ENABLE_VLCD5
 		ui8_tx_buffer[3] = (uint8_t)ui16_adc_pedal_torque_offset_init;
 		if (ui16_adc_pedal_torque > ui16_adc_pedal_torque_offset_init) {
 			ui8_tx_buffer[4] = ui16_adc_pedal_torque - ui16_adc_pedal_torque_offset_init;
@@ -3421,7 +3492,7 @@ static void uart_send_package(void)
 				  break;
 				case 5:
 					ui16_display_data = ui16_display_data_factor / (ui16_adc_throttle >> 2);
-				  break;
+  				  break;
 				case 6:
 					ui16_display_data = ui16_display_data_factor / ui16_adc_pedal_torque;
 				  break;
@@ -3459,18 +3530,6 @@ static void uart_send_package(void)
 					ui16_duty_cycle_percent = (uint16_t) ((ui8_g_duty_cycle * (uint8_t)100) / PWM_DUTY_CYCLE_MAX) - 1;
 					ui16_display_data = (ui16_display_data_factor / ui16_duty_cycle_percent) * 10U;
 				  break;
-				case 13: // DISPLAY_DATA_SPEED - wheel speed
-					if (ui16_wheel_speed_x10 > 0U) {
-#if UNITS_TYPE == MILES
-						ui16_display_data = (ui16_display_data_factor / ui16_wheel_speed_x10) * 10U;
-#else
-						ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
-#endif
-					}
-					else {
-						ui16_display_data = 0;
-					}
-				  break;
 				default:
 				  break;
 			  }
@@ -3490,7 +3549,39 @@ static void uart_send_package(void)
 		}
 		else {
 			// wheel speed
+
 			if (ui16_oem_wheel_speed_time > 0U) {
+#if ENABLE_WHEEL_MAX_SPEED_FROM_DISPLAY
+#if defined SCALE_WHEEL_SPEED_TIME_IN_OFFROAD_MODE
+				// scale wheel speed in offroad mode so that the offroad limit from display
+				// (ui8_wheel_speed_max_array[OFFROAD_MODE] or ui8_max_offroad_speed_from_display)
+				// maps to STREET_MODE_SPEED_LIMIT on the display when using the offroad limit
+
+				// offroad mode selected and using offroad speed limit (toggle not set to street)
+				if ((m_configuration_variables.ui8_street_mode_enabled == OFFROAD_MODE)
+					&& (ui8_speed_limit_in_offroad_mode == OFFROAD_MODE) 
+				    && (STREET_MODE_SPEED_LIMIT != ui8_max_offroad_speed_from_display)) {
+
+					uint8_t ui8_offroad_limit = ui8_max_offroad_speed_from_display;
+
+					// guard against zero or very small limits to avoid division by zero/overflow
+					if (ui8_offroad_limit > 0U) {
+						// use 32-bit arithmetic for intermediate result to avoid overflow
+						uint32_t ui32_temp =
+							((uint32_t)ui16_oem_wheel_speed_time *
+							(uint32_t)ui8_offroad_limit) / (uint32_t)STREET_MODE_SPEED_LIMIT;
+
+						if (ui32_temp > 0xFFFFU) {
+							ui16_oem_wheel_speed_time = 0xFFFFU;
+						}
+						else {
+							ui16_oem_wheel_speed_time = (uint16_t)ui32_temp;
+						}
+					}
+				}
+#endif
+#endif
+
 #if ALTERNATIVE_MILES
 				// in VLCD6 display the km/miles conversion is not present.
 				// alternative mph for VLCD6 converts the sent speed time
@@ -3570,7 +3661,7 @@ static void uart_send_package(void)
 	}
 }
 
-	
+
 static void calc_oem_wheel_speed(void)
 { 
 	if (ui8_display_ready_flag) {
@@ -3671,7 +3762,7 @@ static void check_battery_soc(void)
 	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_1_X10) { ui8_battery_state_of_charge = 2; }	// 1 bar
 	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_EMPTY_X10) { ui8_battery_state_of_charge = 1; }	// blink -> empty
 	else { ui8_battery_state_of_charge = 0; } // undervoltage
-#else // ENABLE_VLCD5 || ENABLE_850C || ENABLE_EKD01
+#else // ENABLE_VLCD5 || ENABLE_850C || ENABLE_EKD01 || ENABLE_DZ40MINI_AS_VLCD5
 	if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_OVERVOLTAGE_X10) { ui8_battery_state_of_charge = 9; }		// overvoltage
 	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_SOC_RESET_X10) { ui8_battery_state_of_charge = 8; }	// 6 bars -> SOC reset
 	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_FULL_X10) { ui8_battery_state_of_charge = 7; }	// 6 bars -> full
