@@ -3010,10 +3010,16 @@ static void uart_receive_package(void)
 			// ui8_rx_buffer[4] test?
 			
 #if ENABLE_WHEEL_MAX_SPEED_FROM_DISPLAY
-			// set wheel max speed from display
+			// set wheel max offroad speed from display; street limit can only be lowered
 			ui8_wheel_speed_max_array[OFFROAD_MODE] = ui8_rx_buffer[5];
 			if (ui8_wheel_speed_max_array[STREET_MODE] > ui8_wheel_speed_max_array[OFFROAD_MODE]) {
 				ui8_wheel_speed_max_array[STREET_MODE] = ui8_wheel_speed_max_array[OFFROAD_MODE];
+			}
+			// ruedbi: also get the wheel size from the display via ui8_oem_wheel_diameter;
+			if( ui8_oem_wheel_diameter >= 26 && ui8_oem_wheel_diameter <= 29) {
+				// override wheel perimeter from display: convert diameter (inches) to perimeter (mm)
+				// Conversion: perimeter_mm = diameter_inches * 25.4 * π ≈ diameter_inches * 80
+				m_configuration_variables.ui16_wheel_perimeter = (uint16_t)(ui8_oem_wheel_diameter * 80U);
 			}
 #endif
 			
