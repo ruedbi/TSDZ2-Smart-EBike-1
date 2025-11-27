@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e
 
-version="20.1C.6-2"
-settings_date=$1
+version="v23_vlcd6_2050"
+settings_date=$(date +%Y%m%d%_H%M)
 
-release_folder=$(pwd)/releases
+release_folder=/mnt/c/Users/Rüdiger/Meine\ Ablage/DriveSyncFiles/ebike
 backup_folder=$(pwd)/releases/backup
 
 cd src
@@ -22,7 +22,7 @@ echo Copying firmware to release folder.
 echo $release_folder/TSDZ2-$version-$settings_date.hex
 mkdir -p "$release_folder"
 yes | cp -rf ../bin/main.hex "$release_folder/TSDZ2-$version-$settings_date.hex"
-
+exit 0
 backup=no
 while true; do
 	read -p "Do you want to backup the firmware ? [y/N]" yn
