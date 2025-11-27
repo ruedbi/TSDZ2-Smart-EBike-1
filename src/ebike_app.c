@@ -28,6 +28,7 @@ static uint8_t ui8_assist_level_5_flag = 0;
 static uint8_t ui8_riding_mode_temp = 0;
 static uint8_t ui8_lights_flag = 0;
 static uint8_t ui8_lights_on_5s = 0;
+static uint8_t ui8_display_lights_control_active = 0;
 static uint8_t ui8_menu_flag = 0;
 static uint8_t ui8_menu_index = 0;
 static uint8_t ui8_data_index = 0;
@@ -2285,6 +2286,10 @@ static void uart_receive_package(void)
 			
 			// display lights button pressed:
 			if (ui8_lights_button_flag) {
+				// detect first display lights command and transfer control to display
+				if (!ui8_display_lights_control_active) {
+					ui8_display_lights_control_active = 1;
+				}
 				// lights off:
 				if (((!ui8_lights_flag)
 				 &&((m_configuration_variables.ui8_set_parameter_enabled)
@@ -2423,6 +2428,11 @@ static void uart_receive_package(void)
 				}
 			}
 			else {
+				// detect first display lights command and transfer control to display
+				if (!ui8_display_lights_control_active) {
+					ui8_display_lights_control_active = 1;
+				}
+				
 				// lights off:
 				if (!ui8_lights_flag)
 				{
@@ -2997,7 +3007,11 @@ static void uart_receive_package(void)
 			// set lights
 #if ENABLE_LIGHTS
 			// switch on/switch off lights
-			if ((ui8_lights_flag)||(ui8_lights_on_5s)) {
+			if (!ui8_display_lights_control_active) {
+				// keep lights ON until display takes control
+				ui8_lights_state = 1;
+			}
+			else if ((ui8_lights_flag)||(ui8_lights_on_5s)) {
 				ui8_lights_state = 1;
 			}
 			else {
