@@ -286,7 +286,7 @@ void ebike_app_init(void)
 {
 	// minimum value for these displays
 	// to compensate for the delay of the lights button
-#if ENABLE_VLCD6 || ENABLE_850C || ENABLE_EKD01
+#if ENABLE_VLCD6 || ENABLE_850C || ENABLE_EKD01 || ENABLE_DZ40MINI_AS_VLCD5
 	if (ui8_delay_display_function < 70) {
 		ui8_delay_display_function = 70;
 	}
@@ -2303,12 +2303,18 @@ static void uart_receive_package(void)
 					{
 						// set menu flag
 						ui8_menu_flag = 1;
-						
-						// set menu index
+
+						// set the new / next menu index:
+#if ENABLE_DZ40MINI_AS_VLCD5
+						// rbien: make the menu roll over to the first item
 						if (++ui8_menu_index > 3) {
 							ui8_menu_index = 1;
 						}
-						
+#else
+						if (++ui8_menu_index > 3) {
+							ui8_menu_index = 3;
+						}
+#endif
 						// display status alternative lights configuration
 						ui8_display_alternative_lights_configuration = 0;
 						
@@ -3059,12 +3065,48 @@ static void uart_receive_package(void)
 	}
 }
 
+/** ruedbi
+ * @brief Sends display data as a package over UART.
+ * my displays: DZ40 mini, EKD01
+ * Overview: https://www.voltriderz.com/de/tongsheng-displays/
+ *
+ * This function is responsible for transmitting a data package
+ * through the UART interface. It prepares the data and handles
+ * the communication protocol to ensure the package is sent correctly.
+ * https://github.com/hurzhurz/tsdz2/blob/master/serial-communication.md
+ * Serial communication
+The communication between LCD and motor controller is a simple serial TTL-level connection with a
+baudrate of 9600. For each direction (motor to LCD / LCD to motor), There is one data message/packet
+format, that is repeated multiple times per second.
 
-static void uart_send_package(void)
-{
+Motor to LCD
+Example message:
+
+43 00 01 51 51 00 07 07 F4
+Send frequency: 8 per second Content:
+
+Byte
+index.
+    |example|description
+0	0x43	Start-Byte
+1	0x00	Battery level
+2	0x01	Motor status flags
+3	0x51	Pedal torque-sensor "tara" value
+            or: measured current *10
+4	0x51	Pedal torque-sensor actual value
+            or: measured power *10
+5	0x00	Error code
+6	0x07	Speedsensor (LOW part of 16bit int)
+7	0x07	Speedsensor (HIGH part of 16bit int)
+8	0xF4	Checksum
+
+ */
+// called every 4th cycle of the main loop, means every 100ms
+static void uart_send_package(void) {
 	uint8_t ui8_i;
 	uint8_t ui8_tx_check_code;
-	
+	static uint8_t ui8_display_function_toggle = 0;
+
 	// display ready
 	if (ui8_display_ready_flag) {
 		// send the data to the LCD
@@ -3077,7 +3119,7 @@ static void uart_send_package(void)
 		// initialize working status
 		ui8_working_status &= 0xFE; // bit0 = 0 (battery normal)
 
-#if ENABLE_VLCD6 || ENABLE_XH18
+#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_DZ40MINI_AS_VLCD5
 		switch (ui8_battery_state_of_charge) {
 			case 0:
 				ui8_working_status |= 0x01; // bit0 = 1 (battery undervoltage)
@@ -3146,7 +3188,10 @@ static void uart_send_package(void)
 #endif
 		
 		// reserved for VLCD5, torque sensor value TE and TE1
-#if ENABLE_VLCD5
+#if ENABLE_DZ40MINI_AS_VLCD5
+		ui8_tx_buffer[3] = 0x46;
+		ui8_tx_buffer[4] = 0x46;
+#elif ENABLE_VLCD5
 		ui8_tx_buffer[3] = (uint8_t)ui16_adc_pedal_torque_offset_init;
 		if (ui16_adc_pedal_torque > ui16_adc_pedal_torque_offset_init) {
 			ui8_tx_buffer[4] = ui16_adc_pedal_torque - ui16_adc_pedal_torque_offset_init;
@@ -3623,7 +3668,7 @@ static void check_battery_soc(void)
 	// the fluctuate voltage is added to the filtered voltage.
 	ui16_battery_voltage_soc_filtered_x10 =	 ui16_battery_voltage_filtered_x10 + ui16_fluctuate_battery_voltage_x10;
 
-#if ENABLE_VLCD6 || ENABLE_XH18
+#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_DZ40MINI_AS_VLCD5
 	if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_6_X10) { ui8_battery_state_of_charge = 7; }		// overvoltage
 	else if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_5_X10) { ui8_battery_state_of_charge = 6; }	// 4 bars -> SOC reset
 	else if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_4_X10) { ui8_battery_state_of_charge = 5; }	// 4 bars -> full
