@@ -2311,7 +2311,7 @@ static void uart_receive_package(void)
 
 						// set the new / next menu index:
 #if ENABLE_DZ40MINI_AS_VLCD5
-						// rbien: make the menu roll over to the first item
+						// ruedbi: make the menu roll over to the first item
 						if (++ui8_menu_index > 3) {
 							ui8_menu_index = 1;
 						}
@@ -3035,8 +3035,9 @@ static void uart_receive_package(void)
 			if (ui8_wheel_speed_max_array[STREET_MODE] > ui8_wheel_speed_max_array[OFFROAD_MODE]) {
 				ui8_wheel_speed_max_array[STREET_MODE] = ui8_wheel_speed_max_array[OFFROAD_MODE];
 			}
-			// ruedbi: also get the wheel size from the display via ui8_oem_wheel_diameter;
-			if( ui8_oem_wheel_diameter >= 26 && ui8_oem_wheel_diameter <= 29) {
+			// ruedbi: also get the wheel size from the display via ui8_oem_wheel_diameter; 
+			// if value is smaller than the real size, the bike will drive faster than it should.
+			if( ui8_oem_wheel_diameter >= 20 && ui8_oem_wheel_diameter <= 29) {
 				// override wheel perimeter from display: convert diameter (inches) to perimeter (mm)
 				// Conversion: perimeter_mm = diameter_inches * 25.4 * π ≈ diameter_inches * 80
 				m_configuration_variables.ui16_wheel_perimeter = (uint16_t)(ui8_oem_wheel_diameter * 80U);
@@ -3438,28 +3439,26 @@ static void uart_send_package(void) {
 #endif
 				  break;
 				case 5:
-					ui16_display_data = ui16_display_data_factor / (ui16_adc_throttle >> 2);
+					// ruedbi: use DISPLAY_DATA_SPEED_LIMIT - actual speed limit
+					if (m_configuration_variables.ui8_wheel_speed_max > 0U) {
+						ui16_display_data = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
 				  break;
 				case 6:
 					ui16_display_data = ui16_display_data_factor / ui16_adc_pedal_torque;
 				  break;
 				case 7:
-#if UNITS_TYPE == MILES
-					ui16_display_data = (ui16_display_data_factor / ui8_pedal_cadence_RPM) * 10U;
-#else
-					if (ui8_pedal_cadence_RPM > 99) {
-						ui16_display_data = ui16_display_data_factor / ui8_pedal_cadence_RPM;
-					}
-					else {
-						ui16_display_data = (ui16_display_data_factor / ui8_pedal_cadence_RPM) * 10U;
-					}
-#endif
+					// ruedbi: use DISPLAY_DATA_WHEEL_DIAMETER - wheel diameter in inches
+					ui16_display_data = m_configuration_variables.ui16_wheel_perimeter/80U;
 				  break;
 				case 8:
-					// human power filtered x 10 for display data
-					ui16_human_power_filtered_x10 = filter(ui16_human_power_x10, ui16_human_power_filtered_x10, 13);
-					ui16_display_data = ui16_display_data_factor / (ui16_human_power_filtered_x10 / 10U);
-				  break;
+					// ruedbi: use speed
+					if (ui16_wheel_speed_x10 > 0U) {
+						#if UNITS_TYPE == MILES
+												ui16_display_data = (ui16_display_data_factor / ui16_wheel_speed_x10) * 10U;
+						#else
+												ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
+						#endif
+										  break;
 				case 9:
 					ui16_display_data = ui16_display_data_factor / ui16_adc_pedal_torque_delta;
 				  break;
@@ -3476,18 +3475,6 @@ static void uart_send_package(void) {
 				case 12:
 					ui16_duty_cycle_percent = (uint16_t) ((ui8_g_duty_cycle * (uint8_t)100) / PWM_DUTY_CYCLE_MAX) - 1;
 					ui16_display_data = (ui16_display_data_factor / ui16_duty_cycle_percent) * 10U;
-				  break;
-				case 13: // DISPLAY_DATA_SPEED - wheel speed
-					if (ui16_wheel_speed_x10 > 0U) {
-#if UNITS_TYPE == MILES
-						ui16_display_data = (ui16_display_data_factor / ui16_wheel_speed_x10) * 10U;
-#else
-						ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
-#endif
-					}
-					else {
-						ui16_display_data = 0;
-					}
 				  break;
 				default:
 				  break;
