@@ -3440,25 +3440,26 @@ static void uart_send_package(void) {
 				  break;
 				case 5:
 					// ruedbi: use DISPLAY_DATA_SPEED_LIMIT - actual speed limit
-					if (m_configuration_variables.ui8_wheel_speed_max > 0U) {
-						ui16_display_data = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
-				  break;
+					uint8_t ui8_speed_limit_kmh = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
+					// Convert km/h to km/h*10 format for display
+					uint16_t ui16_speed_limit_kmh_x10 = (uint16_t)ui8_speed_limit_kmh * 10U;
+					ui16_display_data = ui16_display_data_factor / ui16_speed_limit_kmh_x10;
+  				  break;
 				case 6:
 					ui16_display_data = ui16_display_data_factor / ui16_adc_pedal_torque;
 				  break;
 				case 7:
 					// ruedbi: use DISPLAY_DATA_WHEEL_DIAMETER - wheel diameter in inches
-					ui16_display_data = m_configuration_variables.ui16_wheel_perimeter/80U;
-				  break;
+					// Convert perimeter (mm) to diameter (inches): diameter = perimeter / 80
+					// Display expects diameter*10 format, so use diameter_inches * 10
+						uint8_t ui8_wheel_diameter_inches = (uint8_t)(m_configuration_variables.ui16_wheel_perimeter / 80U);
+						uint16_t ui16_wheel_diameter_inches_x10 = (uint16_t)ui8_wheel_diameter_inches * 10U;
+						ui16_display_data = ui16_display_data_factor / ui16_wheel_diameter_inches_x10;
+					break;
 				case 8:
 					// ruedbi: use speed
-					if (ui16_wheel_speed_x10 > 0U) {
-						#if UNITS_TYPE == MILES
-												ui16_display_data = (ui16_display_data_factor / ui16_wheel_speed_x10) * 10U;
-						#else
-												ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
-						#endif
-										  break;
+						ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
+					break;
 				case 9:
 					ui16_display_data = ui16_display_data_factor / ui16_adc_pedal_torque_delta;
 				  break;
