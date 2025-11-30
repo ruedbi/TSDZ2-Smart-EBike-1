@@ -317,6 +317,7 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define TURBO										4
 
 // assist pedal level mask
+// hex values for DZ40 MINI: 10 / ? (not 80!) / 40 / 2 (?) 4 / 8
 #define ASSIST_PEDAL_LEVEL0							0x10
 #define ASSIST_PEDAL_LEVEL1							0x40
 #define ASSIST_PEDAL_LEVEL2							0x02
@@ -410,7 +411,7 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define SOC_CALC_VOLTS							2
 
 // cell bars
-#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_DZ40MINI_AS_VLCD5
+#if ENABLE_VLCD6 || ENABLE_XH18
 #define BATTERY_SOC_VOLTS_6_X10			(uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_OVERVOLT * 10))
 #define BATTERY_SOC_VOLTS_5_X10			(uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_RESET_SOC_PERCENT * 10))
 #define BATTERY_SOC_VOLTS_4_X10			(uint16_t)(BATTERY_CELLS_NUMBER * ((float)LI_ION_CELL_VOLTS_FULL * 10))

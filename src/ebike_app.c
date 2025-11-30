@@ -287,7 +287,7 @@ void ebike_app_init(void)
 {
 	// minimum value for these displays
 	// to compensate for the delay of the lights button
-#if ENABLE_VLCD6 || ENABLE_850C || ENABLE_EKD01 || ENABLE_DZ40MINI_AS_VLCD5
+#if ENABLE_VLCD6 || ENABLE_850C || ENABLE_EKD01
 	if (ui8_delay_display_function < 70) {
 		ui8_delay_display_function = 70;
 	}
@@ -2208,12 +2208,12 @@ void UART2_IRQHandler(void) __interrupt(UART2_IRQHANDLER)
 	}
 }
 
+uint8_t ui8_assist_level_mask;
 
 static void uart_receive_package(void)
 {
 	uint8_t ui8_i;
 	uint8_t ui8_rx_check_code;
-	uint8_t ui8_assist_level_mask;
 	static uint8_t no_rx_counter = 0;
 	static uint8_t ui8_lights_counter = 0;
 	static uint8_t ui8_walk_assist_button_pressed = 0;
@@ -2256,9 +2256,21 @@ static void uart_receive_package(void)
 			// mask assist level from display
 			ui8_assist_level_mask = ui8_rx_buffer[1] & 0xDE; // mask: 11011110
 			ui8_assist_level_5_flag = 0;
-			
 			// set assist level
 			switch (ui8_assist_level_mask) {
+#ifdef ENABLE_DZ40MINI_AS_VLCD5
+				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
+				case ASSIST_PEDAL_LEVEL1: ui8_assist_level = TOUR; break;
+				case ASSIST_PEDAL_LEVEL2: ui8_assist_level = SPORT; break;
+				case ASSIST_PEDAL_LEVEL3: ui8_assist_level = TURBO; break;
+				case ASSIST_PEDAL_LEVEL4: ui8_assist_level = TURBO; 
+										  ui8_assist_level_5_flag = 1;break;
+				default:
+					// bits used when display level 1 is selected are unknown
+					// but as the others are, this works:
+					ui8_assist_level = ECO;
+					break;
+#else
 				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
 				case ASSIST_PEDAL_LEVEL1: ui8_assist_level = ECO; break;
 				case ASSIST_PEDAL_LEVEL2: ui8_assist_level = TOUR; break;
@@ -2275,6 +2287,10 @@ static void uart_receive_package(void)
 	#endif
 					break;
 #endif
+				default:
+				ui8_assist_level = OFF;
+				break;
+#endif // ENABLE_DZ40MINI_AS_VLCD5
 			}
 			
 			if (!ui8_display_ready_flag) {
@@ -3134,7 +3150,41 @@ static void uart_send_package(void) {
 		// initialize working status
 		ui8_working_status &= 0xFE; // bit0 = 0 (battery normal)
 
-#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_DZ40MINI_AS_VLCD5
+#if ENABLE_DZ40MINI_AS_VLCD5
+		// display with 5 bars !
+		switch (ui8_battery_state_of_charge) {
+			case 0:
+				// status probably not or only very shortly visible
+				ui8_working_status |= 0x01; // bit0 = 1 (battery undervoltage -> triggers power off)
+				ui8_tx_buffer[1] = 0x00; // Battery 1/5 (empty and blinking)
+				break;
+			case 1: // > BATTERY_SOC_VOLTS_0_X10
+				ui8_tx_buffer[1] = 0x00; // Battery 1/5 (empty and blinking)
+				break;
+			case 2: // > BATTERY_SOC_VOLTS_1_X10
+				ui8_tx_buffer[1] = 0x02; // Battery 1/5
+				break;
+			case 3: // > BATTERY_SOC_VOLTS_2_X10
+				ui8_tx_buffer[1] = 0x04; // Battery 2/5
+				break;
+			case 4: // > BATTERY_SOC_VOLTS_3_X10
+				ui8_tx_buffer[1] = 0x06; // Battery 3/5
+				break;
+			case 5: // > BATTERY_SOC_VOLTS_4_X10
+				ui8_tx_buffer[1] = 0x09; // Battery 4/5
+				break;
+			case 6: // > BATTERY_SOC_VOLTS_5_X10
+			case 7: // > BATTERY_SOC_VOLTS_6_X10
+			case 8: // > BATTERY_SOC_VOLTS_7_X10
+				ui8_tx_buffer[1] = 0x0C; // Battery 5/5 (opt. soc reset)
+				break;
+			case 9: // > BATTERY_SOC_VOLTS_8_X10
+				ui8_tx_buffer[1] = 0x0C; // Battery 5/5 (full)
+				// E01 (E06 blinking for XH18) ERROR_OVERVOLTAGE
+				ui8_display_fault_code = ERROR_OVERVOLTAGE; // Fault overvoltage
+				break;
+		}
+#elif ENABLE_VLCD6 || ENABLE_XH18
 		switch (ui8_battery_state_of_charge) {
 			case 0:
 				ui8_working_status |= 0x01; // bit0 = 1 (battery undervoltage)
@@ -3164,6 +3214,7 @@ static void uart_send_package(void) {
 				ui8_display_fault_code = ERROR_OVERVOLTAGE; // Fault overvoltage
 				break;
 		}
+
 #else // ENABLE_VLCD5 or ENABLE_850C or ENABLE_EKD01
 		switch (ui8_battery_state_of_charge) {
 			case 0:
@@ -3461,14 +3512,15 @@ static void uart_send_package(void) {
 						ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
 					break;
 				case 9:
-					ui16_display_data = ui16_display_data_factor / ui16_adc_pedal_torque_delta;
+					// ruedbi: use assist level mask to display the assist level as a percentage
+					ui16_display_data = ui16_display_data_factor / (ui8_assist_level_mask*10);
+					if(ui8_assist_level_mask > 99) {
+						ui16_display_data = 90;
+					}
 				  break;
 				case 10:
-#if UNITS_TYPE == MILES
-					ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_wh_x10;
-#else
-					ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
-#endif
+					// ruedbi: use assist level mask to display the assist level as a percentage
+					ui16_display_data = ui16_display_data_factor / (ui8_assist_level*100);
 				  break;
 				case 11:
 					ui16_display_data = ui16_display_data_factor / ui16_motor_speed_erps;
@@ -3670,7 +3722,7 @@ static void check_battery_soc(void)
 	// the fluctuate voltage is added to the filtered voltage.
 	ui16_battery_voltage_soc_filtered_x10 =	 ui16_battery_voltage_filtered_x10 + ui16_fluctuate_battery_voltage_x10;
 
-#if ENABLE_VLCD6 || ENABLE_XH18 || ENABLE_DZ40MINI_AS_VLCD5
+#if ENABLE_VLCD6 || ENABLE_XH18
 	if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_6_X10) { ui8_battery_state_of_charge = 7; }		// overvoltage
 	else if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_5_X10) { ui8_battery_state_of_charge = 6; }	// 4 bars -> SOC reset
 	else if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_4_X10) { ui8_battery_state_of_charge = 5; }	// 4 bars -> full
@@ -3679,7 +3731,7 @@ static void check_battery_soc(void)
 	else if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_1_X10) { ui8_battery_state_of_charge = 2; }	// 1 bar
 	else if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_0_X10) { ui8_battery_state_of_charge = 1; }	// blink -> empty
 	else { ui8_battery_state_of_charge = 0; } // undervoltage
-#else // ENABLE_VLCD5 || ENABLE_850C || ENABLE_EKD01
+#else // ENABLE_VLCD5 || ENABLE_850C || ENABLE_EKD01 || ENABLE_DZ40MINI_AS_VLCD5
 	if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_8_X10) { ui8_battery_state_of_charge = 9; }		// overvoltage
 	else if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_7_X10) { ui8_battery_state_of_charge = 8; }	// 6 bars -> SOC reset
 	else if (ui16_battery_voltage_soc_filtered_x10 > BATTERY_SOC_VOLTS_6_X10) { ui8_battery_state_of_charge = 7; }	// 6 bars -> full
