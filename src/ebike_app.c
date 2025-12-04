@@ -64,7 +64,8 @@ static uint8_t ui8_riding_mode_parameter = 0;
 volatile uint8_t ui8_system_state = NO_ERROR;
 volatile uint8_t ui8_motor_enabled = 1;
 static uint8_t ui8_assist_without_pedal_rotation_threshold = ASSISTANCE_WITHOUT_PEDAL_ROTATION_THRESHOLD;
-static uint8_t ui8_lights_state = 0;
+// ruedbi: default lights ON at power-up; display takes control after first user light action
+static uint8_t ui8_lights_state = 1;
 static uint8_t ui8_lights_button_flag = 0;
 static uint8_t ui8_field_weakening_erps_delta = 0;
 static uint8_t ui8_optional_ADC_function = OPTIONAL_ADC_FUNCTION;
@@ -1479,7 +1480,7 @@ static void apply_temperature_limiting(void)
 	}
 }
 
-
+// ruedbi
 static void apply_back_emf_protection(void)
 {
 	// Back-EMF protection based on motor speed (ERPS), not wheel speed
@@ -1567,7 +1568,8 @@ static void apply_speed_limit(void)
                 speed_limit_high,
                 ui8_adc_battery_current_target,
                 0U);
-		
+#if 0		
+		// ruedbi:
 		if ((ui16_wheel_speed_x10 > speed_limit_high) || (ui8_assist_level == OFF)) {
 			// set duty cycle target based on assist level (decreases with increased assist level)
 			// Clamp assist level to valid range
@@ -1602,6 +1604,7 @@ static void apply_speed_limit(void)
 			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
 			// which is called after this function, so it will override if needed
 		}
+#endif
     }
 }
 
@@ -2258,7 +2261,7 @@ static void uart_receive_package(void)
 			ui8_assist_level_5_flag = 0;
 			// set assist level
 			switch (ui8_assist_level_mask) {
-#ifdef ENABLE_DZ40MINI_AS_VLCD5
+#ifdef ENABLE_DZ40MINI_AS_VLCD5 // ruedbi
 				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
 				case ASSIST_PEDAL_LEVEL1: ui8_assist_level = TOUR; break;
 				case ASSIST_PEDAL_LEVEL2: ui8_assist_level = SPORT; break;
@@ -2444,11 +2447,6 @@ static void uart_receive_package(void)
 				}
 			}
 			else {
-				// detect first display lights command and transfer control to display
-				if (!ui8_display_lights_control_active) {
-					ui8_display_lights_control_active = 1;
-				}
-				
 				// lights off:
 				if (!ui8_lights_flag)
 				{
@@ -3047,12 +3045,17 @@ static void uart_receive_package(void)
 			
 #if ENABLE_WHEEL_MAX_SPEED_FROM_DISPLAY
 			// set wheel max offroad speed from display; street limit can only be lowered
-			ui8_wheel_speed_max_array[OFFROAD_MODE] = ui8_rx_buffer[5];
+			if( ui8_rx_buffer[5] <=30) {
+				ui8_wheel_speed_max_array[OFFROAD_MODE] = ui8_rx_buffer[5];
+			} else {
+				ui8_wheel_speed_max_array[OFFROAD_MODE] = 30;
+			}
 			if (ui8_wheel_speed_max_array[STREET_MODE] > ui8_wheel_speed_max_array[OFFROAD_MODE]) {
 				ui8_wheel_speed_max_array[STREET_MODE] = ui8_wheel_speed_max_array[OFFROAD_MODE];
 			}
 			// ruedbi: also get the wheel size from the display via ui8_oem_wheel_diameter; 
 			// if value is smaller than the real size, the bike will drive faster than it should.
+			// todo >=26
 			if( ui8_oem_wheel_diameter >= 20 && ui8_oem_wheel_diameter <= 29) {
 				// override wheel perimeter from display: convert diameter (inches) to perimeter (mm)
 				// Conversion: perimeter_mm = diameter_inches * 25.4 * π ≈ diameter_inches * 80
@@ -3150,41 +3153,7 @@ static void uart_send_package(void) {
 		// initialize working status
 		ui8_working_status &= 0xFE; // bit0 = 0 (battery normal)
 
-#if ENABLE_DZ40MINI_AS_VLCD5
-		// display with 5 bars !
-		switch (ui8_battery_state_of_charge) {
-			case 0:
-				// status probably not or only very shortly visible
-				ui8_working_status |= 0x01; // bit0 = 1 (battery undervoltage -> triggers power off)
-				ui8_tx_buffer[1] = 0x00; // Battery 1/5 (empty and blinking)
-				break;
-			case 1: // > BATTERY_SOC_VOLTS_0_X10
-				ui8_tx_buffer[1] = 0x00; // Battery 1/5 (empty and blinking)
-				break;
-			case 2: // > BATTERY_SOC_VOLTS_1_X10
-				ui8_tx_buffer[1] = 0x02; // Battery 1/5
-				break;
-			case 3: // > BATTERY_SOC_VOLTS_2_X10
-				ui8_tx_buffer[1] = 0x04; // Battery 2/5
-				break;
-			case 4: // > BATTERY_SOC_VOLTS_3_X10
-				ui8_tx_buffer[1] = 0x06; // Battery 3/5
-				break;
-			case 5: // > BATTERY_SOC_VOLTS_4_X10
-				ui8_tx_buffer[1] = 0x09; // Battery 4/5
-				break;
-			case 6: // > BATTERY_SOC_VOLTS_5_X10
-			case 7: // > BATTERY_SOC_VOLTS_6_X10
-			case 8: // > BATTERY_SOC_VOLTS_7_X10
-				ui8_tx_buffer[1] = 0x0C; // Battery 5/5 (opt. soc reset)
-				break;
-			case 9: // > BATTERY_SOC_VOLTS_8_X10
-				ui8_tx_buffer[1] = 0x0C; // Battery 5/5 (full)
-				// E01 (E06 blinking for XH18) ERROR_OVERVOLTAGE
-				ui8_display_fault_code = ERROR_OVERVOLTAGE; // Fault overvoltage
-				break;
-		}
-#elif ENABLE_VLCD6 || ENABLE_XH18
+#if ENABLE_VLCD6 || ENABLE_XH18
 		switch (ui8_battery_state_of_charge) {
 			case 0:
 				ui8_working_status |= 0x01; // bit0 = 1 (battery undervoltage)
@@ -3215,7 +3184,7 @@ static void uart_send_package(void) {
 				break;
 		}
 
-#else // ENABLE_VLCD5 or ENABLE_850C or ENABLE_EKD01
+#else // ENABLE_VLCD5 or ENABLE_850C or ENABLE_EKD01 or ENABLE_DZ40MINI_AS_VLCD5
 		switch (ui8_battery_state_of_charge) {
 			case 0:
 				ui8_working_status |= 0x01; // bit0 = 1 (battery undervoltage)
@@ -3237,6 +3206,7 @@ static void uart_send_package(void) {
 				ui8_tx_buffer[1] = 0x08; // Battery 4/6
 				break;
 			case 6:
+				// on the DZ40mini this is already 5/5
 				ui8_tx_buffer[1] = 0x0A; // Battery 5/6
 				break;
 			case 7:
@@ -3512,11 +3482,8 @@ static void uart_send_package(void) {
 						ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
 					break;
 				case 9:
-					// ruedbi: use assist level mask to display the assist level as a percentage
-					ui16_display_data = ui16_display_data_factor / (ui8_assist_level_mask*10);
-					if(ui8_assist_level_mask > 99) {
-						ui16_display_data = 90;
-					}
+					// ruedbi: use current_target
+					ui16_display_data = ui16_display_data_factor / (ui8_adc_battery_current_target*10);
 				  break;
 				case 10:
 					// ruedbi: use assist level mask to display the assist level as a percentage

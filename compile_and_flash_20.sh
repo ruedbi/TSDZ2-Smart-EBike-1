@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-version="v261_dz40_as_vlcd5_2050"
+version="v270_dz40_as_vlcd5_2050"
 settings_date=$(date +%Y%m%d%_H%M)
 
 release_folder=/mnt/c/Users/Rüdiger/Meine\ Ablage/DriveSyncFiles/ebike
