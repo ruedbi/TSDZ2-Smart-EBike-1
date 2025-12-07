@@ -165,6 +165,10 @@ static uint8_t ui8_wheel_speed_max_array[2] = {WHEEL_MAX_SPEED,STREET_MODE_SPEED
 
 // wheel speed display
 static uint8_t ui8_display_ready_flag = 0;
+#if ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01
+// runtime display detection: 0 = not detected, 1 = dz40mini (default), 2 = ekd01
+static uint8_t ui8_runtime_display_type = 1; // default to dz40mini
+#endif
 static uint8_t ui8_startup_counter = 0;
 static uint8_t ui8_startup_flag = 0;
 static uint16_t ui16_oem_wheel_speed_time = 0;
@@ -2221,6 +2225,9 @@ static void uart_receive_package(void)
 	static uint8_t ui8_lights_counter = 0;
 	static uint8_t ui8_walk_assist_button_pressed = 0;
 	static uint8_t ui8_walk_assist_button_released = 0;
+#if ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01
+	static uint8_t ui8_prev_assist_level_mask = ASSIST_PEDAL_LEVEL0;
+#endif
 	
 #if WALK_ASSIST_DEBOUNCE_ENABLED && ENABLE_BRAKE_SENSOR
 	static uint8_t ui8_walk_assist_debounce_flag = 0;
@@ -2259,21 +2266,62 @@ static void uart_receive_package(void)
 			// mask assist level from display
 			ui8_assist_level_mask = ui8_rx_buffer[1] & 0xDE; // mask: 11011110
 			ui8_assist_level_5_flag = 0;
+#if ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01
+			// runtime display detection: check for transition from LEVEL0 to LEVEL1
+			// if transition occurs, it's an ekd01 display
+			if ((ui8_runtime_display_type == 1) && // currently dz40mini (default)
+				(ui8_prev_assist_level_mask == ASSIST_PEDAL_LEVEL0) &&
+				(ui8_assist_level_mask == ASSIST_PEDAL_LEVEL1)) {
+				ui8_runtime_display_type = 2; // switch to ekd01
+			}
+			ui8_prev_assist_level_mask = ui8_assist_level_mask;
+#endif
 			// set assist level
-			switch (ui8_assist_level_mask) {
-#ifdef ENABLE_DZ40MINI_AS_VLCD5 // ruedbi
-				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
-				case ASSIST_PEDAL_LEVEL1: ui8_assist_level = TOUR; break;
-				case ASSIST_PEDAL_LEVEL2: ui8_assist_level = SPORT; break;
-				case ASSIST_PEDAL_LEVEL3: ui8_assist_level = TURBO; break;
-				case ASSIST_PEDAL_LEVEL4: ui8_assist_level = TURBO; 
-										  ui8_assist_level_5_flag = 1;break;
-				default:
-					// bits used when display level 1 is selected are unknown
-					// but as the others are, this works:
-					ui8_assist_level = ECO;
+#if ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01
+			// runtime display detection: use dz40mini or ekd01 mapping based on detected type
+			if (ui8_runtime_display_type == 1) {
+				// dz40mini mapping
+				switch (ui8_assist_level_mask) {
+					case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
+					case ASSIST_PEDAL_LEVEL1: ui8_assist_level = TOUR; break;
+					case ASSIST_PEDAL_LEVEL2: ui8_assist_level = SPORT; break;
+					case ASSIST_PEDAL_LEVEL3: ui8_assist_level = TURBO; break;
+					case ASSIST_PEDAL_LEVEL4: ui8_assist_level = TURBO; 
+											  ui8_assist_level_5_flag = 1;break;
+					default:
+						// bits used when display level 1 is selected are unknown
+						// but as the others are, this works:
+						ui8_assist_level = ECO;
+						break;
+				}
+			} else {
+				// ekd01 mapping (detected at runtime)
+				switch (ui8_assist_level_mask) {
+					case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
+					case ASSIST_PEDAL_LEVEL1: ui8_assist_level = ECO; break;
+					case ASSIST_PEDAL_LEVEL2: ui8_assist_level = TOUR; break;
+					case ASSIST_PEDAL_LEVEL3: ui8_assist_level = SPORT; break;
+					case ASSIST_PEDAL_LEVEL4: ui8_assist_level = TURBO; break;
+#if ASSIST_LEVEL_5_MODE
+					case ASSIST_PEDAL_LEVEL5:
+		#if ASSIST_LEVEL_5_MODE == BEFORE_ECO
+						ui8_assist_level = ECO;
+						ui8_assist_level_5_flag = 1;
+		#elif ASSIST_LEVEL_5_MODE == AFTER_TURBO
+						ui8_assist_level = TURBO;
+						ui8_assist_level_5_flag = 1;
+		#endif
+						break;
+#endif
+					default:
+					ui8_assist_level = OFF;
 					break;
+				}
+			}
+
 #else
+			// standard mapping (ekd01, vlcd5, or other displays)
+			switch (ui8_assist_level_mask) {
 				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
 				case ASSIST_PEDAL_LEVEL1: ui8_assist_level = ECO; break;
 				case ASSIST_PEDAL_LEVEL2: ui8_assist_level = TOUR; break;
@@ -2293,8 +2341,8 @@ static void uart_receive_package(void)
 				default:
 				ui8_assist_level = OFF;
 				break;
-#endif // ENABLE_DZ40MINI_AS_VLCD5
 			}
+#endif
 			
 			if (!ui8_display_ready_flag) {
 				// assist level temp at power on
@@ -2329,11 +2377,20 @@ static void uart_receive_package(void)
 						ui8_menu_flag = 1;
 
 						// set the new / next menu index:
-#if ENABLE_DZ40MINI_AS_VLCD5
-						// ruedbi: make the menu roll over to the first item
-						if (++ui8_menu_index > 3) {
-							ui8_menu_index = 1;
+#if ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01
+						// runtime display detection: dz40mini menu rolls over, ekd01 doesn't
+						if (ui8_runtime_display_type == 1) {
+							// ruedbi: make the menu roll over to the first item (dz40mini)
+							if (++ui8_menu_index > 3) {
+								ui8_menu_index = 1;
+							}
+						} else {
+							// ekd01: standard menu behavior
+							if (++ui8_menu_index > 3) {
+								ui8_menu_index = 3;
+							}
 						}
+
 #else
 						if (++ui8_menu_index > 3) {
 							ui8_menu_index = 3;
@@ -3224,9 +3281,21 @@ static void uart_send_package(void) {
 #endif
 		
 		// reserved for VLCD5, torque sensor value TE and TE1
-#if ENABLE_DZ40MINI_AS_VLCD5
-		ui8_tx_buffer[3] = 0x46;
-		ui8_tx_buffer[4] = 0x46;
+#if ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01
+		// runtime display detection: use dz40mini or ekd01 format based on detected type
+		if (ui8_runtime_display_type == 1) {
+			// dz40mini format
+			ui8_tx_buffer[3] = 0x46;
+			ui8_tx_buffer[4] = 0x46;
+		} else {
+			// ekd01 format (detected at runtime)
+			ui8_tx_buffer[3] = 0; // don't care
+			// battery power filtered x 10 for display data
+			ui16_battery_power_filtered_x10 =
+					filter(ui16_battery_power_x10, ui16_battery_power_filtered_x10, 8);
+			ui8_tx_buffer[4] = (uint8_t)(ui16_battery_power_filtered_x10 / 100);
+		}
+
 #elif ENABLE_VLCD5
 		ui8_tx_buffer[3] = (uint8_t)ui16_adc_pedal_torque_offset_init;
 		if (ui16_adc_pedal_torque > ui16_adc_pedal_torque_offset_init) {
@@ -3332,7 +3401,11 @@ static void uart_send_package(void) {
             // ruedbi: this is the handling of the menu function codes displayed as error codes
 			// on parameter change accept
             // function code
-#if ENABLE_EKD01
+#if ENABLE_EKD01 || (ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01)
+			// check if this is an ekd01 display (explicit or runtime-detected)
+			#if ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01
+			if (ui8_runtime_display_type == 2) {
+			#endif
 			// on this display there is no error code 3 to be found
 			// there is also no other consecutive sequence of 3 errors to be found
 			// so the sequence chosen is 1,2,4 instead
@@ -3347,6 +3420,9 @@ static void uart_send_package(void) {
 			ui8_display_function_code = 4;
 				break;
 			}
+			#if ENABLE_DZ40MINI_AS_VLCD5 && !ENABLE_EKD01
+			}
+			#endif
 #endif
 			// function code
 			if ((!ui8_menu_flag)&&(ui8_menu_index > 0U)
