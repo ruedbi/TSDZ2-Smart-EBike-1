@@ -1835,9 +1835,10 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 	}
 	// Check if the motor goes alone and with current or duty cycle target = 0 (safety)
 	if ((ui16_motor_speed_erps > MOTOR_CHECK_ERPS_THRESHOLD)
-		&&((ui8_riding_torque_mode) || (m_configuration_variables.ui8_riding_mode == CADENCE_ASSIST_MODE))
-		&& (ui8_adc_battery_current_target == 0U || ui8_duty_cycle_target == 0U)) {
-			ui8_motor_check_goes_alone_timer++;
+	&&((ui8_riding_torque_mode) || (m_configuration_variables.ui8_riding_mode == CADENCE_ASSIST_MODE))
+	&& (ui8_adc_battery_current_target == 0U || ui8_duty_cycle_target == 0U)
+	&& (ui8_pedal_cadence_RPM <5U)) {
+		ui8_motor_check_goes_alone_timer++;
 	}
 	else {
 		ui8_motor_check_goes_alone_timer = 0;
