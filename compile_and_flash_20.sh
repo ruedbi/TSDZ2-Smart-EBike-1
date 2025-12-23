@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-version="v270_dz40_ekd01_runtime_detection_2050"
-settings_date=$(date +%Y%m%d%_H%M)
+version="v280_release_dz40_as_vlcd5_2050.ini"
+settings_date=$(date +%Y%m%d)
+settings_time=$(date +%H%M)
 
 release_folder=/mnt/c/Users/Rüdiger/Meine\ Ablage/DriveSyncFiles/ebike
 release_folder2=$(pwd)/releases
@@ -12,7 +13,7 @@ cd src
 
 # Clean existing
 rm -rf main.hex || true
-make clean || true
+# make clean || true
 
 # Build firmware
 echo Build started...
@@ -23,8 +24,8 @@ echo Copying firmware to release folder.
 echo $release_folder/TSDZ2-$version-$settings_date.hex
 mkdir -p "$release_folder"
 mkdir -p "$release_folder2"
-yes | cp -rf ../bin/main.hex "$release_folder/TSDZ2-$version-$settings_date.hex"
-yes | cp -rf ../bin/main.hex "$release_folder2/TSDZ2-$version-$settings_date.hex"
+yes | cp -rf ../bin/main.hex "$release_folder/TSDZ2-$version-$settings_date-$settings_time.hex"
+yes | cp -rf ../bin/main.hex "$release_folder2/TSDZ2-$version-$settings_date-$settings_time.hex"
 
 # ruedbi:
 exit 0
