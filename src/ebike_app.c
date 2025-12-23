@@ -1572,7 +1572,7 @@ static void apply_speed_limit(void)
                 speed_limit_high,
                 ui8_adc_battery_current_target,
                 0U);
-#if 0		
+		
 		// ruedbi:
 		if ((ui16_wheel_speed_x10 > speed_limit_high) || (ui8_assist_level == OFF)) {
 			// set duty cycle target based on assist level (decreases with increased assist level)
@@ -1600,15 +1600,15 @@ static void apply_speed_limit(void)
 			
 			// Limit target power to maximum 0.5A when speed limit is exceeded
 			// 0.5A = 0.5 / 0.16 = 3.125 ADC steps, use 3 for safety margin
-			#define SPEED_LIMIT_MAX_CURRENT_ADC 3  // 0.5A maximum
+			#define SPEED_LIMIT_MAX_CURRENT_ADC 10  // hack, use 3 for 0.5A maximum
 			if (ui8_adc_battery_current_target > SPEED_LIMIT_MAX_CURRENT_ADC) {
 				ui8_adc_battery_current_target = SPEED_LIMIT_MAX_CURRENT_ADC;
 			}
 			
 			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
 			// which is called after this function, so it will override if needed
+			// note: ui8_duty_cycle_target will only be increased in apply_back_emf_protection()
 		}
-#endif
     }
 }
 
@@ -1819,6 +1819,7 @@ static void check_system(void)
 // E09 shared with ERROR_WRITE_EEPROM
 #define MOTOR_CHECK_TIME_GOES_ALONE_TRESHOLD         	60 // 60 * 100ms = 6.0 seconds
 #define MOTOR_CHECK_ERPS_THRESHOLD                  	20 // 20 ERPS
+#define MOTOR_CHECK_PEDAL_TORQUE_THRESHOLD			60 // Threshold for strong pedal force (ADC delta)
 static uint8_t ui8_riding_torque_mode = 0;
 static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 	
@@ -1833,11 +1834,17 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 	else {
 		ui8_riding_torque_mode = 0;
 	}
-	// Check if the motor goes alone and with current or duty cycle target = 0 (safety)
+	// Check if the motor goes alone and with current AND duty cycle target = 0 (safety)
+	// This protects against unwanted motor rotation that could turn pedals due to SW/HW bugs
+	// Check applies to:
+	// - All modes when assist level is OFF (most critical safety case)
+	// - Torque-based modes (POWER, TORQUE, HYBRID, eMTB) and CADENCE mode when assist is ON
+	// Condition: motor rotating fast, no command (both targets = 0), user not pedaling hard
 	if ((ui16_motor_speed_erps > MOTOR_CHECK_ERPS_THRESHOLD)
-	&&((ui8_riding_torque_mode) || (m_configuration_variables.ui8_riding_mode == CADENCE_ASSIST_MODE))
-	&& (ui8_adc_battery_current_target == 0U || ui8_duty_cycle_target == 0U)
-	&& (ui8_pedal_cadence_RPM <5U)) {
+	&& ((ui8_assist_level == OFF)  // Always check when assist is OFF (critical safety)
+		|| ((ui8_riding_torque_mode) || (m_configuration_variables.ui8_riding_mode == CADENCE_ASSIST_MODE)))
+	&& (ui8_adc_battery_current_target == 0U && ui8_duty_cycle_target == 0U)  // Both must be 0 (AND, not OR)
+	&& (ui16_adc_pedal_torque_delta < MOTOR_CHECK_PEDAL_TORQUE_THRESHOLD)) {  // User not pedaling hard
 		ui8_motor_check_goes_alone_timer++;
 	}
 	else {
