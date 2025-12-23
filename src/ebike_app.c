@@ -1823,6 +1823,12 @@ static void check_system(void)
 // E09 shared with ERROR_WRITE_EEPROM
 #define MOTOR_CHECK_TIME_GOES_ALONE_TRESHOLD         	60 // 60 * 100ms = 6.0 seconds
 #define MOTOR_CHECK_ERPS_THRESHOLD                  	20 // 20 ERPS
+// Typical Values
+// 0: no torque applied
+// 1–50: light pressure
+// 50–100: moderate pressure
+// 100–150: strong pressure
+// 120: threshold used for "assist without pedal rotation" (line 734)
 #define MOTOR_CHECK_PEDAL_TORQUE_THRESHOLD			60 // Threshold for strong pedal force (ADC delta)
 static uint8_t ui8_riding_torque_mode = 0;
 static uint8_t ui8_motor_check_goes_alone_timer = 0U;
