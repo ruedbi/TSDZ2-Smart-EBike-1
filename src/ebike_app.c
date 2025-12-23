@@ -741,6 +741,10 @@ static void apply_power_assist(void)
 		apply_startup_boost();
 	}
 	
+	if (m_configuration_variables.ui8_assist_with_error_enabled) {
+		ui8_pedal_cadence_RPM = 1;
+	}
+	
 	if ((ui8_pedal_cadence_RPM > 0U)||(ui8_startup_assist_adc_battery_current_target)) {
 		// calculate torque on pedals + torque startup boost
 		uint32_t ui32_pedal_torque_x100 = (uint32_t)(ui16_adc_pedal_torque_delta * ui8_pedal_torque_per_10_bit_ADC_step_x100);
