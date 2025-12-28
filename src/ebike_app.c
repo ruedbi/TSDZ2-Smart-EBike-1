@@ -526,7 +526,10 @@ static void ebike_control_motor(void)
 	// This protects against regenerative current regardless of wheel speed
 	// Must be called after speed limit to allow speed limiting to set duty cycle first,
 	// then back-EMF protection can override if needed to prevent regeneration
+	#if defined DEBUG_BUILD
+	// ruedbi
 	apply_back_emf_protection();
+	#endif
 	
 	// Check battery Over-current (read current here in case PWM interrupt for some error was disabled)
 	// Read in assembler to ensure data consistency (conversion overrun)
@@ -736,11 +739,13 @@ static void apply_power_assist(void)
 	if (m_configuration_variables.ui8_startup_boost_enabled) {
 		apply_startup_boost();
 	}
-	
+
+	// ruedbi
+#if defined DEBUG_BUILD
 	if (m_configuration_variables.ui8_assist_with_error_enabled) {
 		ui8_pedal_cadence_RPM = 1;
-	}
-	
+	}	
+#endif
 	if ((ui8_pedal_cadence_RPM > 0U)||(ui8_startup_assist_adc_battery_current_target)) {
 		// calculate torque on pedals + torque startup boost
 		uint32_t ui32_pedal_torque_x100 = (uint32_t)(ui16_adc_pedal_torque_delta * ui8_pedal_torque_per_10_bit_ADC_step_x100);
@@ -1574,7 +1579,10 @@ static void apply_speed_limit(void)
                 0U);
 		
 		// ruedbi:
-		if ((ui16_wheel_speed_x10 > speed_limit_high) || (ui8_assist_level == OFF)) {
+		if (ui16_wheel_speed_x10 > speed_limit_high) {
+#if !defined DEBUG_BUILD
+			ui8_duty_cycle_target = 0;
+#else
 			// set duty cycle target based on assist level (decreases with increased assist level)
 			// Clamp assist level to valid range
 			// also with no assist, there is minimum assist ;-)
@@ -1608,6 +1616,7 @@ static void apply_speed_limit(void)
 			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
 			// which is called after this function, so it will override if needed
 			// note: ui8_duty_cycle_target will only be increased in apply_back_emf_protection()
+#endif
 		}
     }
 }
@@ -1841,7 +1850,7 @@ static uint8_t ui8_motor_check_goes_alone_timer = 0U;
 		ui8_riding_torque_mode = 0;
 	}
 	// Check if the motor goes alone and with current AND duty cycle target = 0 (safety)
-	// This protects against unwanted motor rotation that could turn pedals due to SW/HW bugs
+	// ruedbi: This protects against unwanted motor rotation that could turn pedals due to SW/HW bugs
 	// Check applies to:
 	// - All modes when assist level is OFF (most critical safety case)
 	// - Torque-based modes (POWER, TORQUE, HYBRID, eMTB) and CADENCE mode when assist is ON
@@ -2229,12 +2238,12 @@ void UART2_IRQHandler(void) __interrupt(UART2_IRQHANDLER)
 	}
 }
 
-uint8_t ui8_assist_level_mask;
 
 static void uart_receive_package(void)
 {
 	uint8_t ui8_i;
 	uint8_t ui8_rx_check_code;
+	uint8_t ui8_assist_level_mask;
 	static uint8_t no_rx_counter = 0;
 	static uint8_t ui8_lights_counter = 0;
 	static uint8_t ui8_walk_assist_button_pressed = 0;
@@ -2278,6 +2287,7 @@ static void uart_receive_package(void)
 			ui8_assist_level_mask = ui8_rx_buffer[1] & 0xDE; // mask: 11011110
 			ui8_assist_level_5_flag = 0;
 
+			// set assist level
 			switch (ui8_assist_level_mask) {
 				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
 				case ASSIST_PEDAL_LEVEL1: ui8_assist_level = ECO; break;
@@ -2295,9 +2305,6 @@ static void uart_receive_package(void)
 	#endif
 					break;
 #endif
-				default:
-				ui8_assist_level = OFF;
-				break;
 			}
 			
 			if (!ui8_display_ready_flag) {
@@ -2868,11 +2875,18 @@ static void uart_receive_package(void)
 #endif
 #if ENABLE_WALK_ASSIST
 						// walk assist mode
-						// safety check: if button is not pressed, always deactivate walk assist
-						if (!ui8_walk_assist_button_pressed) {
-							// button not pressed - deactivate walk assist
-							// check if mode is WALK_ASSIST_MODE (regardless of flag state)
-							if (m_configuration_variables.ui8_riding_mode == WALK_ASSIST_MODE) {
+						if ((ui8_walk_assist_button_pressed)&&(ui8_startup_flag)&&(!ui8_startup_assist_flag)
+						  &&(ui8_walk_assist_enabled_array[m_configuration_variables.ui8_street_mode_enabled])) {
+							if (!ui8_walk_assist_flag) {
+								// set walk assist flag
+								ui8_walk_assist_flag = 1;
+								// for restore riding mode
+								ui8_riding_mode_temp = m_configuration_variables.ui8_riding_mode;
+								// set walk assist mode
+								m_configuration_variables.ui8_riding_mode = WALK_ASSIST_MODE;
+							}
+						}
+						else {
 	#if WALK_ASSIST_DEBOUNCE_ENABLED && ENABLE_BRAKE_SENSOR
 								if (ui8_walk_assist_flag) {
 									if (!ui8_walk_assist_debounce_flag) {
@@ -2900,7 +2914,9 @@ static void uart_receive_package(void)
 									}	
 									else {
 										// restore previous riding mode
+									if (ui8_walk_assist_flag) {
 										m_configuration_variables.ui8_riding_mode = ui8_riding_mode_temp;
+									}
 										// reset walk assist flag
 										ui8_walk_assist_flag = 0;
 										// reset walk assist debounce flag
@@ -2909,36 +2925,10 @@ static void uart_receive_package(void)
 										ui8_walk_assist_speed_flag = 0;
 									}
 								}
-								else {
-									// flag not set but mode is WALK_ASSIST_MODE - restore mode immediately
-									// use default mode if temp is not valid (shouldn't happen, but safety check)
-									if (ui8_riding_mode_temp > 0 && ui8_riding_mode_temp <= HYBRID_ASSIST_MODE) {
-										m_configuration_variables.ui8_riding_mode = ui8_riding_mode_temp;
-									}
-									else {
-										// fallback to default mode
-										m_configuration_variables.ui8_riding_mode = POWER_ASSIST_MODE;
-									}
-									// reset walk assist debounce flag
-									ui8_walk_assist_debounce_flag = 0;
-									// reset walk assist speed flag
-									ui8_walk_assist_speed_flag = 0;
-								}
 	#else
 								// restore previous riding mode
-								if (ui8_walk_assist_flag && ui8_riding_mode_temp > 0 && ui8_riding_mode_temp <= HYBRID_ASSIST_MODE) {
+							if (ui8_walk_assist_flag) {
 									m_configuration_variables.ui8_riding_mode = ui8_riding_mode_temp;
-								}
-								else if (!ui8_walk_assist_flag) {
-									// flag not set but mode is WALK_ASSIST_MODE - restore mode immediately
-									// use default mode if temp is not valid
-									if (ui8_riding_mode_temp > 0 && ui8_riding_mode_temp <= HYBRID_ASSIST_MODE) {
-										m_configuration_variables.ui8_riding_mode = ui8_riding_mode_temp;
-									}
-									else {
-										// fallback to default mode
-										m_configuration_variables.ui8_riding_mode = POWER_ASSIST_MODE;
-									}
 								}
 								// reset walk assist flag
 								ui8_walk_assist_flag = 0;
@@ -2946,28 +2936,6 @@ static void uart_receive_package(void)
 								ui8_walk_assist_speed_flag = 0;
 	#endif
 							}
-							else {
-								// mode is not WALK_ASSIST_MODE - just reset flags to be safe
-								ui8_walk_assist_flag = 0;
-								ui8_walk_assist_speed_flag = 0;
-	#if WALK_ASSIST_DEBOUNCE_ENABLED && ENABLE_BRAKE_SENSOR
-								ui8_walk_assist_debounce_flag = 0;
-	#endif
-							}
-						}
-						else if ((ui8_startup_flag)&&(!ui8_startup_assist_flag)
-						  &&(ui8_walk_assist_enabled_array[m_configuration_variables.ui8_street_mode_enabled])) {
-							// button is pressed and conditions are met - activate walk assist
-							if (!ui8_walk_assist_flag) {
-								// set walk assist flag
-								ui8_walk_assist_flag = 1;
-								// for restore riding mode
-								ui8_riding_mode_temp = m_configuration_variables.ui8_riding_mode;
-								// set walk assist mode
-								m_configuration_variables.ui8_riding_mode = WALK_ASSIST_MODE;
-							}
-						}
-						// else: button pressed but conditions not met - walk assist remains inactive
 #endif
 					}
 					else {
@@ -3181,7 +3149,6 @@ index.
 static void uart_send_package(void) {
 	uint8_t ui8_i;
 	uint8_t ui8_tx_check_code;
-	static uint8_t ui8_display_function_toggle = 0;
 
 	// display ready
 	if (ui8_display_ready_flag) {
@@ -3504,22 +3471,22 @@ static void uart_send_package(void) {
 #endif
 				  break;
 				case 5:
-					// ruedbi: use DISPLAY_DATA_SPEED_LIMIT - actual speed limit
-					uint8_t ui8_speed_limit_kmh = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
-					// Convert km/h to km/h*10 format for display
-					uint16_t ui16_speed_limit_kmh_x10 = (uint16_t)ui8_speed_limit_kmh * 10U;
-					ui16_display_data = ui16_display_data_factor / ui16_speed_limit_kmh_x10;
+					ui16_display_data = ui16_display_data_factor / (ui16_adc_throttle >> 2);
   				  break;
 				case 6:
 					ui16_display_data = ui16_display_data_factor / ui16_adc_pedal_torque;
 				  break;
 				case 7:
-					// ruedbi: use DISPLAY_DATA_WHEEL_DIAMETER - wheel diameter in inches
-					// Convert perimeter (mm) to diameter (inches): diameter = perimeter / 80
-					// Display expects diameter*10 format, so use diameter_inches * 10
-						uint8_t ui8_wheel_diameter_inches = (uint8_t)(m_configuration_variables.ui16_wheel_perimeter / 80U);
-						uint16_t ui16_wheel_diameter_inches_x10 = (uint16_t)ui8_wheel_diameter_inches * 10U;
-						ui16_display_data = ui16_display_data_factor / ui16_wheel_diameter_inches_x10;
+#if UNITS_TYPE == MILES
+					ui16_display_data = (ui16_display_data_factor / ui8_pedal_cadence_RPM) * 10U;
+#else
+					if (ui8_pedal_cadence_RPM > 99) {
+						ui16_display_data = ui16_display_data_factor / ui8_pedal_cadence_RPM;
+					}
+					else {
+						ui16_display_data = (ui16_display_data_factor / ui8_pedal_cadence_RPM) * 10U;
+					}
+#endif
 					break;
 				case 8:
 					// ruedbi: use speed
@@ -3530,8 +3497,11 @@ static void uart_send_package(void) {
 					ui16_display_data = ui16_display_data_factor / (ui8_adc_battery_current_target*10);
 				  break;
 				case 10:
-					// ruedbi: use assist level mask to display the assist level as a percentage
-					ui16_display_data = ui16_display_data_factor / (ui8_assist_level*100);
+#if UNITS_TYPE == MILES
+					ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_wh_x10;
+#else
+					ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
+#endif
 				  break;
 				case 11:
 					ui16_display_data = ui16_display_data_factor / ui16_motor_speed_erps;

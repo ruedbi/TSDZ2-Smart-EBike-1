@@ -324,6 +324,8 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define ASSIST_PEDAL_LEVEL3							0x04
 #define ASSIST_PEDAL_LEVEL4							0x08
 #define ASSIST_PEDAL_LEVEL5							0x80
+// assist pedal level 5
+#define BEFORE_ECO									1
 #define AFTER_TURBO									2
 
 // assist mode
