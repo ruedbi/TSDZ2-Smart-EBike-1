@@ -3234,9 +3234,14 @@ static void uart_send_package(void) {
 		
 		// reserved for VLCD5, torque sensor value TE and TE1
 #if ENABLE_DZ40MINI_AS_VLCD5
-		// dz40mini format
-		ui8_tx_buffer[3] = 0x46;
-		ui8_tx_buffer[4] = 0x46;
+		// // dz40mini format
+		// ui8_tx_buffer[3] = 0x46;
+		// ui8_tx_buffer[4] = 0x46;
+        ui8_tx_buffer[3] = 0; // don't care
+        // battery power filtered x 10 for display data
+        ui16_battery_power_filtered_x10 =
+                filter(ui16_battery_power_x10, ui16_battery_power_filtered_x10, 8);
+        ui8_tx_buffer[4] = (uint8_t)(ui16_battery_power_filtered_x10 / 100);
 
 #elif ENABLE_VLCD5
 		ui8_tx_buffer[3] = (uint8_t)ui16_adc_pedal_torque_offset_init;

@@ -22,7 +22,7 @@ backup_folder=$(pwd)/releases/backup
 cd src
 # Clean existing
 rm -rf main.hex || true
-make clean || true
+# make clean || true
 
 # Build firmware
 echo Build started...
