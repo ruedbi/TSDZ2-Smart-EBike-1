@@ -2278,24 +2278,6 @@ static void uart_receive_package(void)
 			ui8_assist_level_mask = ui8_rx_buffer[1] & 0xDE; // mask: 11011110
 			ui8_assist_level_5_flag = 0;
 
-#if ENABLE_DZ40MINI_AS_VLCD5
-			// dz40mini mapping
-			switch (ui8_assist_level_mask) {
-				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
-				case ASSIST_PEDAL_LEVEL1: ui8_assist_level = TOUR; break;
-				case ASSIST_PEDAL_LEVEL2: ui8_assist_level = SPORT; break;
-				case ASSIST_PEDAL_LEVEL3: ui8_assist_level = TURBO; break;
-				case ASSIST_PEDAL_LEVEL4: ui8_assist_level = TURBO; 
-										  ui8_assist_level_5_flag = 1;break;
-				default:
-					// bits used when display level 1 is selected are unknown
-					// but as the others are, this works:
-					ui8_assist_level = ECO;
-					break;
-			}
-
-#else
-			// standard mapping (ekd01, vlcd5, or other displays)
 			switch (ui8_assist_level_mask) {
 				case ASSIST_PEDAL_LEVEL0: ui8_assist_level = OFF; break;
 				case ASSIST_PEDAL_LEVEL1: ui8_assist_level = ECO; break;
@@ -2317,7 +2299,6 @@ static void uart_receive_package(void)
 				ui8_assist_level = OFF;
 				break;
 			}
-#endif
 			
 			if (!ui8_display_ready_flag) {
 				// assist level temp at power on

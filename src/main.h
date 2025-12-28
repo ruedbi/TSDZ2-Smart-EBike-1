@@ -317,15 +317,13 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define TURBO										4
 
 // assist pedal level mask
-// hex values for DZ40 MINI: 10 / ? (not 80!) / 40 / 2 (?) 4 / 8
+// hex values for DZ40 MINI, ekd01 levels in order: 10 / 80 / 40 / 2 / 4 / 8
 #define ASSIST_PEDAL_LEVEL0							0x10
 #define ASSIST_PEDAL_LEVEL1							0x40
 #define ASSIST_PEDAL_LEVEL2							0x02
 #define ASSIST_PEDAL_LEVEL3							0x04
 #define ASSIST_PEDAL_LEVEL4							0x08
 #define ASSIST_PEDAL_LEVEL5							0x80
-// assist pedal level 5
-#define BEFORE_ECO									1
 #define AFTER_TURBO									2
 
 // assist mode

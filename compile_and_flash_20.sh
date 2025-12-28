@@ -1,7 +1,17 @@
 #!/bin/bash
 set -e
 
-version="v280_release_dz40_as_vlcd5_2050.ini"
+if [ "$1" == "release" ]; then
+	CFLAGS=-DRELEASE_BUILD
+	MODE=release
+	echo "Release build"
+else
+	CFLAGS=-DDEBUG_BUILD
+	MODE=debug
+	echo "Debug build"
+fi
+
+version="v281_${MODE}_dz40_as_vlcd5_2050.ini"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
@@ -10,22 +20,21 @@ release_folder2=$(pwd)/releases
 backup_folder=$(pwd)/releases/backup
 
 cd src
-
 # Clean existing
 rm -rf main.hex || true
-# make clean || true
+make clean || true
 
 # Build firmware
 echo Build started...
-make all
+make all CFLAGS=$CFLAGS
 
 # Save new firmware
 echo Copying firmware to release folder.
 echo $release_folder/TSDZ2-$version-$settings_date.hex
 mkdir -p "$release_folder"
 mkdir -p "$release_folder2"
-yes | cp -rf ../bin/main.hex "$release_folder/TSDZ2-$version-$settings_date-$settings_time.hex"
-yes | cp -rf ../bin/main.hex "$release_folder2/TSDZ2-$version-$settings_date-$settings_time.hex"
+yes | cp -rf ../bin/main.hex "$release_folder/TSDZ2-$version-$settings_date.hex"
+yes | cp -rf ../bin/main.hex "$release_folder2/TSDZ2-$version-$settings_date.hex"
 
 # ruedbi:
 exit 0
