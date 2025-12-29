@@ -11,7 +11,7 @@ else
 	echo "Debug build"
 fi
 
-version="v282_${MODE}_dz40_as_vlcd5_2050"
+version="v282_${MODE}_25plus_dc30_10_no_power_limit"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
@@ -22,7 +22,7 @@ backup_folder=$(pwd)/releases/backup
 cd src
 # Clean existing
 rm -rf main.hex || true
-# make clean || true
+make clean || true
 
 # Build firmware
 echo Build started...

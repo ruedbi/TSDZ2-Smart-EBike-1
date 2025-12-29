@@ -1593,8 +1593,8 @@ static void apply_speed_limit(void)
 			ui8_duty_cycle_target = (uint8_t)map_ui8(ui8_assist_level_clamped,
 					OFF,  // minimum assist level (highest duty cycle)
 					TURBO, // maximum assist level (lowest duty cycle)
-					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH/10, // high value for lower assist levels
-					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_LOW/10); // low value for higher assist levels
+					300/10, // high value for lower assist levels
+					100/10); // low value for higher assist levels
 			
 			// Clamp target power to match the limited duty cycle
 			// Calculate maximum allowed power based on duty cycle: power is roughly proportional to duty cycle
@@ -1609,9 +1609,9 @@ static void apply_speed_limit(void)
 			// Limit target power to maximum 0.5A when speed limit is exceeded
 			// 0.5A = 0.5 / 0.16 = 3.125 ADC steps, use 3 for safety margin
 			#define SPEED_LIMIT_MAX_CURRENT_ADC 10  // hack, use 3 for 0.5A maximum
-			if (ui8_adc_battery_current_target > SPEED_LIMIT_MAX_CURRENT_ADC) {
-				ui8_adc_battery_current_target = SPEED_LIMIT_MAX_CURRENT_ADC;
-			}
+			// if (ui8_adc_battery_current_target > SPEED_LIMIT_MAX_CURRENT_ADC) {
+			// 	ui8_adc_battery_current_target = SPEED_LIMIT_MAX_CURRENT_ADC;
+			// }
 			
 			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
 			// which is called after this function, so it will override if needed
