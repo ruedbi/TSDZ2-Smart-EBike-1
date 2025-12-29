@@ -11,7 +11,7 @@ else
 	echo "Debug build"
 fi
 
-version="v282_${MODE}_25plus_dc30_10_power_limit"
+version="v282_${MODE}_25plus_dc10_5_power_limit"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 

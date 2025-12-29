@@ -1593,8 +1593,8 @@ static void apply_speed_limit(void)
 			ui8_duty_cycle_target = (uint8_t)map_ui8(ui8_assist_level_clamped,
 					OFF,  // minimum assist level (highest duty cycle)
 					TURBO, // maximum assist level (lowest duty cycle)
-					300/10, // high value for lower assist levels
-					100/10); // low value for higher assist levels
+					100/10, // high value for lower assist levels
+					50/10); // low value for higher assist levels
 			
 			// Clamp target power to match the limited duty cycle
 			// Calculate maximum allowed power based on duty cycle: power is roughly proportional to duty cycle
