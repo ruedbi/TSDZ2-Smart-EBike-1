@@ -1609,9 +1609,9 @@ static void apply_speed_limit(void)
 			// Limit target power to maximum 0.5A when speed limit is exceeded
 			// 0.5A = 0.5 / 0.16 = 3.125 ADC steps, use 3 for safety margin
 			#define SPEED_LIMIT_MAX_CURRENT_ADC 10  // hack, use 3 for 0.5A maximum
-			// if (ui8_adc_battery_current_target > SPEED_LIMIT_MAX_CURRENT_ADC) {
-			// 	ui8_adc_battery_current_target = SPEED_LIMIT_MAX_CURRENT_ADC;
-			// }
+			if (ui8_adc_battery_current_target > SPEED_LIMIT_MAX_CURRENT_ADC) {
+				ui8_adc_battery_current_target = SPEED_LIMIT_MAX_CURRENT_ADC;
+			}
 			
 			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
 			// which is called after this function, so it will override if needed
