@@ -2316,10 +2316,7 @@ static void uart_receive_package(void)
 			
 			// display lights button pressed:
 			if (ui8_lights_button_flag) {
-				// detect first display lights command and transfer control to display
-				if (!ui8_display_lights_control_active) {
-					ui8_display_lights_control_active = 1;
-				}
+				// display light control is disabled; keep lights always on
 				// lights off:
 				if (((!ui8_lights_flag)
 				 &&((m_configuration_variables.ui8_set_parameter_enabled)
@@ -3031,17 +3028,8 @@ static void uart_receive_package(void)
 			
 			// set lights
 #if ENABLE_LIGHTS
-			// switch on/switch off lights
-			if (!ui8_display_lights_control_active) {
-				// keep lights ON until display takes control
-				ui8_lights_state = 1;
-			}
-			else if ((ui8_lights_flag)||(ui8_lights_on_5s)) {
-				ui8_lights_state = 1;
-			}
-			else {
-				ui8_lights_state = 0;
-			}
+			// force lights always on; ignore display on/off control
+			ui8_lights_state = 1;
 #endif
 			
 			// ui8_rx_buffer[2] current max?
