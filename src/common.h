@@ -45,6 +45,13 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define ENABLE_DZ40MINI_AS_VLCD5 1
 // #define RELEASE_BUILD
 // #define DEBUG_BUILD
+
+// also available:
+// #define ADD_BACK_EMF_PROTECTION
+
+// always enabled:
+#define ADD_MINIMUM_POWER
+
 #endif
 
 #endif /* COMMON_COMMON_H_ */

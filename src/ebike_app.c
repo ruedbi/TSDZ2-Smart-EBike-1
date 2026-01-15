@@ -526,7 +526,7 @@ static void ebike_control_motor(void)
 	// This protects against regenerative current regardless of wheel speed
 	// Must be called after speed limit to allow speed limiting to set duty cycle first,
 	// then back-EMF protection can override if needed to prevent regeneration
-	#if defined DEBUG_BUILD
+	#if defined DEBUG_BUILD || defined ADD_BACK_EMF_PROTECTION
 	// ruedbi
 	apply_back_emf_protection();
 	#endif
@@ -1583,19 +1583,29 @@ static void apply_speed_limit(void)
 #if !defined DEBUG_BUILD
 			ui8_duty_cycle_target = 0;
 #else
+#if defined DEBUG_BUILD || defined ADD_MINIMUM_POWER
+			// ruedbi: also with no assist, there is minimum assist ;-)
 			// set duty cycle target based on assist level (decreases with increased assist level)
 			// Clamp assist level to valid range
-			// also with no assist, there is minimum assist ;-)
 			uint8_t ui8_assist_level_clamped = (ui8_assist_level > TURBO) ? TURBO : ui8_assist_level;
 			// Map assist level (OFF=0, ECO=1, TOUR=2, SPORT=3, TURBO=4) to duty cycle
 			// Higher assist level -> lower duty cycle
 			// this should create a mostly constant power just to overcome the mech. losses:
+#if defined RELEASE_BUILD
+			// very limited and small range:
 			ui8_duty_cycle_target = (uint8_t)map_ui8(ui8_assist_level_clamped,
 					OFF,  // minimum assist level (highest duty cycle)
 					TURBO, // maximum assist level (lowest duty cycle)
 					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH/10, // high value for lower assist levels
 					SPEED_LIMIT_OVERRUN_DUTY_CYCLE_LOW/10); // low value for higher assist levels
-			
+#else 
+			// ruedbi: more range for testing if it works:
+			ui8_duty_cycle_target = (uint8_t)map_ui8(ui8_assist_level_clamped,
+				OFF,  // minimum assist level (highest duty cycle)
+				TURBO, // maximum assist level (lowest duty cycle)
+				SPEED_LIMIT_OVERRUN_DUTY_CYCLE_HIGH/2, // high value for lower assist levels
+				SPEED_LIMIT_OVERRUN_DUTY_CYCLE_LOW/10); // low value for higher assist levels
+#endif
 			// Clamp target power to match the limited duty cycle
 			// Calculate maximum allowed power based on duty cycle: power is roughly proportional to duty cycle
 			// For speed limit overrun, we want minimal power just to overcome mechanical losses
@@ -1608,14 +1618,19 @@ static void apply_speed_limit(void)
 			
 			// Limit target power to maximum 0.5A when speed limit is exceeded
 			// 0.5A = 0.5 / 0.16 = 3.125 ADC steps, use 3 for safety margin
-			#define SPEED_LIMIT_MAX_CURRENT_ADC 10  // hack, use 3 for 0.5A maximum
+#if defined RELEASE_BUILD
+			#define SPEED_LIMIT_MAX_CURRENT_ADC 3  // 3 for ~0.5A maximum
+#else
+			#define SPEED_LIMIT_MAX_CURRENT_ADC 20  // debug hack
+#endif
 			if (ui8_adc_battery_current_target > SPEED_LIMIT_MAX_CURRENT_ADC) {
 				ui8_adc_battery_current_target = SPEED_LIMIT_MAX_CURRENT_ADC;
 			}
 			
 			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
 			// which is called after this function, so it will override if needed
-			// note: ui8_duty_cycle_target will only be increased in apply_back_emf_protection()
+			// ui8_duty_cycle_target will only be increased in apply_back_emf_protection(), never decreased
+#endif
 #endif
 		}
     }
@@ -3500,8 +3515,9 @@ static void uart_send_package(void) {
 					ui16_display_data = ui16_display_data_factor / ui16_motor_speed_erps;
 				  break;
 				case 12:
-					ui16_duty_cycle_percent = (uint16_t) ((ui8_g_duty_cycle * (uint8_t)100) / PWM_DUTY_CYCLE_MAX) - 1;
-					ui16_display_data = (ui16_display_data_factor / ui16_duty_cycle_percent) * 10U;
+					// ruedbi: use duty cycle target instead of g_duty_cycle
+					ui16_duty_cycle_percent = (uint16_t) ((ui8_duty_cycle_target * (uint8_t)100) / PWM_DUTY_CYCLE_MAX) - 1;
+					ui16_display_data = ui16_display_data_factor / ui16_duty_cycle_percent;
 				  break;
 				default:
 				  break;
