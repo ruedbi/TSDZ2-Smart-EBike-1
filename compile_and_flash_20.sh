@@ -11,7 +11,7 @@ else
 	echo "Debug build"
 fi
 
-version="v282_${MODE}_dz40_as_vlcd5_2050"
+version="v283_${MODE}_dz40_as_vlcd5_2050"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 

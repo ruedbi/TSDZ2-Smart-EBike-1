@@ -42,6 +42,7 @@ static uint16_t ui16_data_value = 0;
 static uint8_t ui8_auto_display_data_flag = 0;
 static uint8_t ui8_auto_display_data_status = 0;
 static uint8_t ui8_auto_data_number_display = AUTO_DATA_NUMBER_DISPLAY;
+static uint8_t ui8_sequence_repeat_count = 0;
 static uint16_t ui16_display_data_factor = 0;
 static uint8_t ui8_delay_display_function = DELAY_MENU_ON;
 static uint8_t ui8_display_data_on_startup = DATA_DISPLAY_ON_STARTUP;
@@ -2980,10 +2981,12 @@ static void uart_receive_package(void)
 						ui8_menu_counter = 0;
 					// set data index
 					ui8_data_index = 0;
+					// reset sequence repeat count
+					ui8_sequence_repeat_count = 0;
 					// assist level temp, ignore first change
 					ui8_assist_level_temp = ui8_assist_level;
 					// delay data function
-					if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
+					if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255) && (ui8_delay_display_array[ui8_data_index] != 254)) {
 						ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
 					}
 					else {
@@ -2995,17 +2998,39 @@ static void uart_receive_package(void)
 					if (!ui8_delay_display_array[ui8_data_index]) {
 						ui8_menu_counter = 0;
 					}
-					// check if delay is 255 (restart sequence from start)
+					// check if delay is 255 (restart sequence from start, endless)
 					if (ui8_delay_display_array[ui8_data_index] == 255) {
 						// restart sequence from the start
 						ui8_menu_counter = 0;
 						ui8_data_index = 0;
 						// delay data function
-						if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
+						if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255) && (ui8_delay_display_array[ui8_data_index] != 254)) {
 							ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
 						}
 						else {
 							ui8_delay_display_function  = DELAY_MENU_ON;
+						}
+					}
+					// check if delay is 254 (restart sequence from start, 3 times only)
+					else if (ui8_delay_display_array[ui8_data_index] == 254) {
+						// check if we've repeated less than 3 times
+						if (ui8_sequence_repeat_count < 3) {
+							// increment repeat count
+							ui8_sequence_repeat_count++;
+							// restart sequence from the start
+							ui8_menu_counter = 0;
+							ui8_data_index = 0;
+							// delay data function
+							if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255) && (ui8_delay_display_array[ui8_data_index] != 254)) {
+								ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
+							}
+							else {
+								ui8_delay_display_function  = DELAY_MENU_ON;
+							}
+						}
+						else {
+							// stop sequence after 3 repetitions
+							ui8_auto_display_data_status = 0;
 						}
 					}
 					else if ((ui8_data_index + 1) < ui8_auto_data_number_display) {
@@ -3015,7 +3040,7 @@ static void uart_receive_package(void)
 							// increment data index
 							ui8_data_index++;
 							// delay data function
-							if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255)) {
+							if (ui8_delay_display_array[ui8_data_index] && (ui8_delay_display_array[ui8_data_index] != 255) && (ui8_delay_display_array[ui8_data_index] != 254)) {
 								ui8_delay_display_function  = ui8_delay_display_array[ui8_data_index];
 							}
 							else {
@@ -3498,7 +3523,7 @@ static void uart_send_package(void) {
 					break;
 				case 8:
 					// ruedbi: use speed
-						ui16_display_data = ui16_display_data_factor / ui16_wheel_speed_x10;
+					ui16_display_data = ui16_display_data_factor / ui16_oem_wheel_speed_time;
 					break;
 				case 9:
 					// ruedbi: use current_target
