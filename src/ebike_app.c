@@ -527,7 +527,7 @@ static void ebike_control_motor(void)
 	// This protects against regenerative current regardless of wheel speed
 	// Must be called after speed limit to allow speed limiting to set duty cycle first,
 	// then back-EMF protection can override if needed to prevent regeneration
-	#if defined DEBUG_BUILD || defined ADD_BACK_EMF_PROTECTION
+	#if defined ADD_BACK_EMF_PROTECTION
 	// ruedbi
 	apply_back_emf_protection();
 	#endif
@@ -1629,7 +1629,7 @@ static void apply_speed_limit(void)
 			}
 			
 			// Note: Motor-speed-based minimum duty cycle is now handled by apply_back_emf_protection()
-			// which is called after this function, so it will override if needed
+			// which may be called after this function, so it will override if needed
 			// ui8_duty_cycle_target will only be increased in apply_back_emf_protection(), never decreased
 #endif
 #endif
@@ -3526,8 +3526,8 @@ static void uart_send_package(void) {
 					ui16_display_data = ui16_display_data_factor / ui16_oem_wheel_speed_time;
 					break;
 				case 9:
-					// ruedbi: use current_target
-					ui16_display_data = ui16_display_data_factor / (ui8_adc_battery_current_target*10);
+					// ruedbi: use current_target; value <= 99
+					ui16_display_data = (ui16_display_data_factor / ui8_adc_battery_current_target) * 10U;
 				  break;
 				case 10:
 #if UNITS_TYPE == MILES
@@ -3541,8 +3541,9 @@ static void uart_send_package(void) {
 				  break;
 				case 12:
 					// ruedbi: use duty cycle target instead of g_duty_cycle
+					// value <= 99
 					ui16_duty_cycle_percent = (uint16_t) ((ui8_duty_cycle_target * (uint8_t)100) / PWM_DUTY_CYCLE_MAX) - 1;
-					ui16_display_data = ui16_display_data_factor / ui16_duty_cycle_percent;
+					ui16_display_data = (ui16_display_data_factor / ui16_duty_cycle_percent) * 10U;
 				  break;
 				default:
 				  break;
