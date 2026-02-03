@@ -3431,8 +3431,19 @@ static void uart_send_package(void)
 				ui8_tx_buffer[7] = (uint8_t) (ui16_data_value >> 8);
 #else
 				// km/h or mph
-				ui8_tx_buffer[6] = (uint8_t) (ui16_oem_wheel_speed_time & 0xFF);
-				ui8_tx_buffer[7] = (uint8_t) (ui16_oem_wheel_speed_time >> 8);
+				{ // ruedbi: scale the wheel speed time to the street mode speed limit
+					uint16_t ui16_wheel_speed_time_for_display = ui16_oem_wheel_speed_time;
+					if ((m_configuration_variables.ui8_street_mode_enabled == OFFROAD_MODE)
+						&& (ui8_wheel_speed_max_array[STREET_MODE] > 0U)) {
+						uint32_t ui32_scaled =
+							((uint32_t)ui16_oem_wheel_speed_time
+							 * (uint32_t)ui8_wheel_speed_max_array[OFFROAD_MODE])
+							/ (uint32_t)ui8_wheel_speed_max_array[STREET_MODE];
+						ui16_wheel_speed_time_for_display = (uint16_t)ui32_scaled;
+					}
+					ui8_tx_buffer[6] = (uint8_t) (ui16_wheel_speed_time_for_display & 0xFF);
+					ui8_tx_buffer[7] = (uint8_t) (ui16_wheel_speed_time_for_display >> 8);
+				}
 #endif
 			}
 			else {
