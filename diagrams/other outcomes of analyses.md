@@ -569,3 +569,44 @@ A lower MOTOR_ACCELERATION results in a larger "inverse step" (slower ramp-up).
 Runtime adjustment: In set_motor_ramp() (lines 663–674), this default value is used as the starting point (the slowest allowed acceleration) for low speeds (<4kph) or low cadences (<20rpm). As speed or cadence increases, the system automatically makes the ramp-up faster (smaller step value), transitioning from your configured "comfort" acceleration to the maximum hardware acceleration.
 
 In short: It sets the "softness" of the motor engagement at low speeds. Higher values make the bike feel snappier off the line; lower values make it smoother and gentler.
+
+---
+
+# Smooth Start Logic Explanation
+The Smooth Start feature is designed to prevent sudden power surges when starting from a standstill. It works by gradually ramping up the pedal torque signal (and thus motor power) over a set period of time, rather than applying full power instantly.
+
+1. How it works
+The logic is executed every 25 milliseconds (40 times per second) and follows this sequence:
+
+Reset Condition: When the bike is completely stopped (0 RPM cadence AND 0 wheel speed), a counter is reset to a starting value determined by your setting.
+Ramp Up: As soon as you start pedaling (or the wheel moves), the counter begins counting down to zero.
+Scaling: While the counter is counting down, the pedal torque signal is scaled linearly from **0
+% to 100%**: * Start: 0% torque passed through. * During: Torque ramps up progressively (e.g. 10%, 20%, 30%...). * End: 100% torque passed through (full power).
+
+2. How SMOOTH_START_SET_PERCENT affects it
+SMOOTH_START_SET_PERCENT directly controls the duration of this ramp-up phase. The value (default 35%) is mapped to a counter value, which determines how many 25ms cycles it takes to reach full power.
+
+Higher Value (e.g., 100%): Sets a higher starting counter. This means the countdown takes longer, resulting in a slower, smoother ramp-up.
+Lower Value (e.g., 0%): Sets a lower starting counter. The countdown finishes very quickly (or instantly), resulting in a sharper, more immediate power delivery.
+Minimum Limit: There is a hardcoded minimum limit (SMOOTH_START_RAMP_MIN = 30), preventing the ramp-up from being instant (0ms) to ensure at least some basic smoothing (~0.75 seconds minimum ramp).
+In summary: SMOOTH_START_SET_PERCENT controls the time it takes to go from 0% to 100% power when starting from a stop. A higher percentage means a longer, gentler start.
+
+Based on the code analysis, the Smooth Start feature is applied in the following assist modes:
+
+Torque Assist Mode (TORQUE_ASSIST_MODE)
+Hybrid Assist Mode (HYBRID_ASSIST_MODE)
+Cadence Assist Mode (
+CADENCE_ASSIST_MODE)
+
+It is NOT applied in:
+
+Power Assist Mode (POWER_ASSIST_MODE)
+eMTB Assist Mode (eMTB_ASSIST_MODE)
+Cruise Mode
+Walk Assist Mode
+Important Distinction for Cadence Mode
+While Torque and Hybrid modes strictly follow your configured SMOOTH_START_SET_PERCENT, the Cadence mode behaves differently:
+
+It enforces a minimum smoothness (maximum speed of ramp-up).
+If your configured smooth start is faster than the default (shorter ramp time), Cadence mode will ignore it and use the slower default ramp (SMOOTH_START_RAMP_DEFAULT).
+This effectively means Cadence mode always enforces a slow, gentle start (approx. 4 seconds ramp-up) even if you try to configure it for a fast start, likely to prevent jerky behavior since Cadence mode applies power based on rotation speed rather than pedal pressure.

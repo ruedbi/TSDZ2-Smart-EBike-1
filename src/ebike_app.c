@@ -3530,7 +3530,11 @@ static void uart_send_package(void)
 					ui16_duty_cycle_percent = (uint16_t) ((ui8_g_duty_cycle * (uint8_t)100) / PWM_DUTY_CYCLE_MAX) - 1;
 					ui16_display_data = (ui16_display_data_factor / ui16_duty_cycle_percent) * 10U;
 				  break;
-				default:
+				case 13: 
+					// battery voltage not filtered x10
+					ui16_display_data = ui16_display_data_factor / (ui16_battery_voltage_filtered_x10);
+				  break;
+			  default:
 				  break;
 			  }
 			}

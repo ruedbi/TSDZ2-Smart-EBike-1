@@ -221,28 +221,25 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 //#define ADC_10_BIT_BATTERY_CURRENT_MAX				136	// 22 amps // 1 = 0.16 Amp
 #define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX			187	// 30 amps // 1 = 0.16 Amp
 
-#if ENABLE_VLCD5 // ruedbi
-#define MY_HW_CURRENT_LIMIT 15
-// must be <= MY_HW_CURRENT_LIMIT:
-#define MY_BATTERY_CURRENT_LIMIT 14
-// assert when BATTERY_CURRENT_MAX > MY_BATTERY_CURRENT_LIMIT
-#if BATTERY_CURRENT_MAX > MY_BATTERY_CURRENT_LIMIT
-#error "BATTERY_CURRENT_MAX exceeded MY_BATTERY_CURRENT_LIMIT"
-#endif
+#if defined (LIMIT_CURRENTS) // ruedbi
+// my own limits:
+#define MY_PHASE_CURRENT_LIMIT 15 // [A] hard limit for my controllers
 
+// BATTERY_CURRENT_MAX from the UI is used as a flexible max phase current limit
+// from that I derive the max battery current, which is less critical and a bit higher (+1A, losses)
+#if BATTERY_CURRENT_MAX > MY_PHASE_CURRENT_LIMIT
+#error "BATTERY_CURRENT_MAX exceeded MY_PHASE_CURRENT_LIMIT"
+#endif
 #undef ADC_10_BIT_BATTERY_EXTRACURRENT
-#define ADC_10_BIT_BATTERY_EXTRACURRENT				((MY_HW_CURRENT_LIMIT-BATTERY_CURRENT_MAX)*6) // overcurrent must not exceed HW limit of MY_BATTERY_CURRENT_LIMIT
+#define ADC_10_BIT_BATTERY_EXTRACURRENT				((2)*6) // 2A, fixed 
 
 #undef ADC_10_BIT_BATTERY_CURRENT_MAX
-#define ADC_10_BIT_BATTERY_CURRENT_MAX				(BATTERY_CURRENT_MAX*6)
+#define ADC_10_BIT_BATTERY_CURRENT_MAX				((BATTERY_CURRENT_MAX+1)*6)
 
-// ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX represents the hardware safety limit for the motor phase current (set to ~30A by default). It is used in three key ways:
-// Safety Ceiling (Initialization & Cap) In src/ebike_app.c, it initializes the runtime variable ui8_adc_motor_phase_current_max. Even if the software calculates a higher allowed current based on battery limits, this constant acts as a hard ceiling (lines 424–426) to prevent the controller from exceeding its hardware rating.
-// Scaling Reference It is used to proportionally scale the motor phase current limit based on the configured battery current limit (line 421). The system calculates: Limit = Battery_Current_Max * (Phase_Max_Constant / Battery_Max_Constant) This ensures the phase current limit scales naturally with your battery settings but never exceeds the hardware maximum.
-// Runtime Protection In the main PWM control loop (src/motor.c, line 809), the current estimated phase current is compared against this maximum. If the phase current exceeds the limit, the controller immediately ramps down the PWM duty cycle to reduce current.
 #undef ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX
-#define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX			(MY_HW_CURRENT_LIMIT*6)
+#define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX			(MY_PHASE_CURRENT_LIMIT*6)
 #endif
+#endif // LIMIT_CURRENTS
 /*---------------------------------------------------------
  NOTE: regarding ADC battery current max
 

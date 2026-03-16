@@ -32,8 +32,8 @@ ELF_SECTIONS_TO_REMOVE = -R DATA -R INITIALIZED -R SSEG
 
 # These are the sources that must be compiled to .rel files:
 	EXTRASRCS = \
-	ebike_app.c \
 	common.c \
+	ebike_app.c \
 	torque_sensor.c \
 	uart.c \
 	pwm.c \
