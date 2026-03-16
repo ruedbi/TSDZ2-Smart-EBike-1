@@ -11,7 +11,7 @@ else
 	echo "Release build"
 fi
 
-version="v289_${MODE}_current_limited"
+version="v290_${MODE}_current_limited"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 

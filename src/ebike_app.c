@@ -3052,9 +3052,9 @@ static void uart_receive_package(void)
 				// offroad mode: use toggle to select offroad or street limit
 				uint8_t idx = m_configuration_variables.ui8_street_mode_enabled;
 				if ((idx == OFFROAD_MODE) && (ui8_speed_limit_in_offroad_mode == STREET_MODE))
-					m_configuration_variables.ui8_wheel_speed_max = STREET_MODE_SPEED_LIMIT;
+					ui8_wheel_speed_max = STREET_MODE_SPEED_LIMIT;
 				else
-				    m_configuration_variables.ui8_wheel_speed_max = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
+				    ui8_wheel_speed_max = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
 			}
 			
 			// current limit with power limit

@@ -238,7 +238,6 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 
 #undef ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX
 #define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX			(MY_PHASE_CURRENT_LIMIT*6)
-#endif
 #endif // LIMIT_CURRENTS
 /*---------------------------------------------------------
  NOTE: regarding ADC battery current max
