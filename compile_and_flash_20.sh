@@ -11,7 +11,7 @@ else
 	echo "Release build"
 fi
 
-version="v290_${MODE}_current_limited"
+version="v291_${MODE}_current_limited_20A"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
@@ -22,7 +22,7 @@ backup_folder=$(pwd)/releases/backup
 cd src
 # Clean existing
 rm -rf main.hex || true
-# make clean || true
+make clean || true
 
 # Build firmware
 echo Build started...

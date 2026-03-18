@@ -19,3 +19,4 @@ tests/sim/*
 !cygwin_64/tmp/
 JavaConfigurator.jar
 src/config.h
+experimental settings/
