@@ -610,3 +610,249 @@ While Torque and Hybrid modes strictly follow your configured SMOOTH_START_SET_P
 It enforces a minimum smoothness (maximum speed of ramp-up).
 If your configured smooth start is faster than the default (shorter ramp time), Cadence mode will ignore it and use the slower default ramp (SMOOTH_START_RAMP_DEFAULT).
 This effectively means Cadence mode always enforces a slow, gentle start (approx. 4 seconds ramp-up) even if you try to configure it for a fast start, likely to prevent jerky behavior since Cadence mode applies power based on rotation speed rather than pedal pressure.
+
+---
+
+**User**
+
+@src/main.h:218-222 what is the use of these current max values and when and for how long are they in use instead of BATTERY_CURRENT_MAX
+
+---
+
+**Cursor**
+
+The hardcoded values in `src/main.h` (lines 218-222) serve two distinct purposes depending on the state of the bike:
+
+### 1. As an Absolute Safety Ceiling (Always Active)
+*   **`ADC_10_BIT_BATTERY_CURRENT_MAX` (112 ≈ 18A):** This is the hard upper limit for the controller. Even if you configure `BATTERY_CURRENT_MAX` in `config.h` to something higher (e.g., 20A or 25A), the firmware will forcibly cap it at **18A** (112 ADC steps) in the main control loop. You cannot exceed this value without changing the code.
+*   **`ADC_10_BIT_BATTERY_EXTRACURRENT` (50 ≈ 8A):** This defines the "trip point" for the overcurrent error. It is added to the active current limit. So, if your limit is 18A, the system will shut down with an overcurrent error if it sees **
+
+26A** (18A + 8A).
+*   **`ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX` (187 ≈ 30A):** This is the hard safety limit for the motor phase current. It prevents hardware damage by capping the phase current at ~30A regardless of other settings.
+
+### 2. As the "Default" Behavior (Startup Phase)
+These values are used as the **active settings** during the startup phase, **ignoring your `config.h` settings** temporarily.
+
+*   **When:** From the moment you power on the controller.
+*   **How Long:** Until the controller successfully receives the first data packet from the display (LCD).
+    *   **Normal Operation:** This typically takes **0.5 to 2 seconds** (display boot + communication handshake). During this brief window, the bike allows up to 18A, even if you configured it for 13A.
+    *   **No Display / Communication Failure:** If you run the bike without a display or if the cable is broken, the controller **will never update** to your configured values. It will permanently run with the hardcoded **18A limit** and the defaults defined here.
+
+**Summary:** Your configured `BATTERY_CURRENT_MAX` (e.g., 13A) is only applied **after** the display finishes booting and talks to the controller. Before that moment, the code blindly uses the 18A limit defined in these lines.
+
+---
+
+**User**
+
+does that mean that after the display is up, the phase current can never exceed BATTERY_CURRENT_MAX ?
+
+---
+
+**Cursor**
+
+No, that is **not correct**. The phase current **can** and usually **does** exceed `BATTERY_CURRENT_MAX`, especially at low speeds and high torque.
+
+Here is the breakdown:
+
+1.  **Phase Current vs. Battery Current:**
+    *   **Battery Current:** The current flowing from the battery to the controller. This is what you configure with `BATTERY_CURRENT_MAX` (e.g., 13A).
+    *   **Phase Current:** The current circulating in the motor windings. At low speeds, the controller acts like a transformer (buck converter), converting high voltage/low current (from battery) into low voltage/high current (to motor).
+    *   **Result:** You can have 13A drawn from the battery but 20A or more flowing through the motor phases.
+
+2.  **How the Limit is Calculated:**
+    The code explicitly scales the allowed phase current based on your battery current setting.
+    In `src/ebike_app.c` (lines 422-423):
+    ```c
+    // Calculate phase current limit proportional to battery current limit
+    uint16_t ui16_temp = ui8_adc_battery_current_max_temp_1 * ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
+    ui8_adc_motor_phase_current_max = (uint8_t)(ui16_temp / ADC_10_BIT_BATTERY_CURRENT_MAX);
+    ```
+    
+    *   `ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX` = 187 (approx. **30A**)
+    *   `ADC_10_BIT_BATTERY_CURRENT_MAX` = 112 (approx. **18A**)
+    *   **Ratio:** 30A / 18A ≈ **1.67**
+
+    **Example:**
+    If you set `BATTERY_CURRENT_MAX` to **13A**:
+    *   Battery Limit = 13A
+    *   Phase Current Limit = 13A × 1.67 ≈ **21.7A**
+
+**Conclusion:**
+Even after the display is up and your 13A battery limit is active, the motor phase current is allowed to go up to **~21.7A**. This is intentional and necessary for providing good torque at low speeds (like starting on a hill) without exceeding the battery's power rating. The hard ceiling of **30A** (187 ADC steps) is the absolute hardware safety limit that is never exceeded.
+
+---
+
+**User**
+
+show in the code where that transformation gets configured
+
+---
+
+**Cursor**
+
+The transformation scaling is configured in `src/ebike_app.c` inside the function `uart_receive_package`.
+
+This function processes the configuration data received from the display (or uses defaults if no display is connected) and calculates the runtime limits.
+
+```c:src/ebike_app.c
+// ... inside uart_receive_package ...
+
+// 1. First, it calculates the user's requested battery current limit in ADC steps
+// based on the configuration variable (e.g. 13A)
+ui8_adc_battery_current_max_temp_1 = (uint8_t)((uint16_t)(m_configuration_variables.ui8_battery_current_max * 100U)
+    / BATTERY_CURRENT_PER_10_BIT_ADC_STEP_X100);
+
+// ...
+
+// 2. Then, it calculates the Motor Phase Current Limit
+// It scales it proportionally: (User Battery Limit / Hardcoded Battery Limit) * Hardcoded Phase Limit
+uint16_t ui16_temp = ui8_adc_battery_current_max_temp_1 * ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
+ui8_adc_motor_phase_current_max = (uint8_t)(ui16_temp / ADC_10_BIT_BATTERY_CURRENT_MAX);
+```
+
+**Where:**
+*   `ui8_adc_battery_current_max_temp_1` is your **13A** (converted to ADC steps).
+*   `ADC_10_BIT_BATTERY_CURRENT_MAX` is the hardcoded **18A** (112 steps).
+*   `ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX` is the hardcoded **30A** (187 steps).
+
+So the calculation effectively sets the phase limit to:
+`Phase Limit = 13A * (30A / 18A) = 21.6A`
+
+This variable `ui8_adc_motor_phase_current_max` is then used by the motor control loop (in `src/motor.c`, not shown here but implied) to cap the phase current in real-time.
+
+---
+
+**User**
+
+which max. values can ui8_adc_motor_phase_current reach?
+
+---
+
+**Cursor**
+
+The variable `ui8_adc_motor_phase_current` is an 8-bit unsigned integer, so mathematically it can reach a maximum value of **255**.
+
+In the context of the firmware:
+
+1.  **ADC Steps:** 1 ADC step ≈ 0.16 Amps.
+2.  **Max Value (255):** 255 * 0.16A ≈ **40.8 Amps**.
+
+The code explicitly caps this value at 255 if the calculation overflows (lines 660-661 in the C-commented section and lines 716-718 in the assembly section), meaning the software cannot represent a phase current higher than **~40.8A**.
+
+However, in practice, the `ui8_adc_motor_phase_current_max` (the safety limit we discussed earlier, capped at 187 or ~30A) acts as a control threshold. If `ui8_adc_motor_phase_current` exceeds that limit (e.g., goes above 30A), the controller immediately ramps down the duty cycle (power) to bring it back under the limit.
+
+---
+
+**User**
+
+looks like ui8_adc_battery_overcurrent is not used at all, right?
+
+---
+
+**Cursor**
+
+It **is used**, but in a specific way:
+
+1.  **Usage:** It is used in the inline assembly block (lines 542–549 of `src/ebike_app.c`) to check for **battery overcurrent**.
+    *   `ld a, 0x53eb` loads the current battery current ADC value (from `ADC1->DB5RL`).
+    *   `cp a, _ui8_adc_battery_overcurrent` compares the measured current against the overcurrent limit.
+    *   If the measured current is higher than the limit (`ui8_adc_battery_overcurrent`), it sets `ui8_error_battery_overcurrent` to `ERROR_BATTERY_OVERCURRENT`.
+
+2.  **Logic:**
+    *   If the error persists for `ui8_battery_overcurrent_delay` cycles (lines 551–559), the system state transitions to `ERROR_BATTERY_OVERCURRENT`.
+    *   This shuts down the motor (lines 626 and 632) until the error clears or the bike stops (lines 563–566).
+
+So, `ui8_adc_battery_overcurrent` acts as the **trip threshold** for the software-based overcurrent protection. It is updated dynamically (line 591) based on the current limit + an extra buffer (`ADC_10_BIT_BATTERY_EXTRACURRENT`).
+
+---
+
+**User**
+
+@src/main.h:218-220 what is the purpose of these values vs. BATTERY_CURRENT_MAX
+
+---
+
+**Cursor**
+
+The values in `src/main.h` act as **absolute safety limits (hard ceilings)** and **emergency trip thresholds**, whereas `BATTERY_CURRENT_MAX` in `config.h` is your **normal operational target**.
+
+Here is how they differ in purpose:
+
+### 1. `BATTERY_CURRENT_MAX` (e.g., 13A)
+*   **Purpose:** This is your **target limit**. During normal riding, the motor controller continuously adjusts the motor power (PWM duty cycle) to ensure the current drawn from the battery *smoothly* stays at or below this value. 
+*   **Location:** Defined in `config.h` and sent by the display.
+
+### 2. `ADC_10_BIT_BATTERY_CURRENT_MAX` (112 = 18A)
+*   **Purpose:** This is the **absolute safety ceiling**. 
+*   **How it works:** Even if you set `BATTERY_CURRENT_MAX` to 20A or 25A in your configuration, the software will forcibly cap it at 18A (112 ADC steps). This protects the TSDZ2 hardware from melting. 
+*   **Fallback:** It also serves as the default limit for the first few seconds when you turn the bike on, before the display has successfully transmitted your `config.h` settings.
+
+### 3. `ADC_10_BIT_BATTERY_EXTRACURRENT` (50 = 8A)
+*   **Purpose:** This defines the **emergency shutdown margin** (Overcurrent Protection).
+*   **How it works:** While `BATTERY_CURRENT_MAX` tells the motor to *slowly reduce power* if it reaches 13A, spikes can still happen. The controller calculates an emergency trip point:
+    `Trip Point = Active Limit + ADC_10_BIT_BATTERY_EXTRACURRENT`
+*   If the current hits this trip point (e.g., 13A + 8A = 21A), the controller stops trying to regulate power smoothly and **instantly cuts off the motor entirely**, throwing an `ERROR_BATTERY_OVERCURRENT` (E07).
+
+**In Summary:**
+*   **`BATTERY_CURRENT_MAX`:** "Try to keep the current below this."
+*   **`ADC_10_BIT_BATTERY_CURRENT_MAX`:** "Never let the active limit go above 18A, no matter what the user configures."
+*   **`ADC_10_BIT_BATTERY_EXTRACURRENT`:** "If the current suddenly spikes 8A *above* the active limit, instantly kill the motor to prevent a fire."
+
+---
+
+**User**
+
+@src/main.h:222-223 how is that value used and what is the reaction on exceeding this value
+
+---
+
+**Cursor**
+
+The constant `ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX` (187, which corresponds to roughly 30 amps) represents the **absolute maximum hardware limit** for the motor phase current. 
+
+### How it is used
+
+1.  **Scaling the Target Limit:** 
+    It is used in `src/ebike_app.c` to proportionally scale the motor phase current limit based on your configured battery current limit. 
+    ```c
+    // Phase Limit = (User Battery Limit * 187) / 112
+    uint16_t ui16_temp = ui8_adc_battery_current_max_temp_1 * ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
+    ui8_adc_motor_phase_current_max = (uint8_t)(ui16_temp / ADC_10_BIT_BATTERY_CURRENT_MAX);
+    ```
+2.  **Absolute Safety Cap:**
+    Immediately after the above calculation, the code enforces that the resulting phase current limit can *never* exceed 187:
+    ```c
+    if (ui8_adc_motor_phase_current_max > ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX) {
+        ui8_adc_motor_phase_current_max = ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
+    }
+    ```
+
+### Reaction on Exceeding This Value
+
+The active limit (`ui8_adc_motor_phase_current_max`) is constantly monitored inside the high-frequency PWM control loop in `src/motor.c`.
+
+If the currently measured motor phase current (`ui8_adc_motor_phase_current`) exceeds this maximum limit, the reaction is to **smoothly but immediately ramp down the motor power**:
+
+```c:src/motor.c (lines 805-827)
+// check if to decrease, increase or maintain duty cycle
+if ( // ... other conditions ...
+  || (ui8_adc_motor_phase_current > ui8_adc_motor_phase_current_max) // <--- CHECK IS HERE
+  // ...
+   ) {
+    // ...
+    // ramp down duty cycle
+    if (++ui8_counter_duty_cycle_ramp_down > ui8_controller_duty_cycle_ramp_down_inverse_step) {
+        ui8_counter_duty_cycle_ramp_down = 0;
+        // decrement field weakening angle if set or duty cycle if not
+        if (ui8_fw_hall_counter_offset > 0) {
+            ui8_fw_hall_counter_offset--;
+        }
+        else if (ui8_g_duty_cycle > 0) {
+            ui8_g_duty_cycle--; // <--- REDUCES POWER TO THE MOTOR
+        }
+    }
+}
+```
+
+**In summary:** Unlike the *battery overcurrent* (which triggers an E07 error and shuts off the motor entirely), exceeding the *phase current limit* is treated as a normal control boundary. The controller simply reduces the PWM duty cycle (backing off the throttle) until the phase current drops back down below the limit. This prevents the motor coils from burning up while climbing steep hills at low speeds.
+

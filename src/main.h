@@ -222,22 +222,32 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX			187	// 30 amps // 1 = 0.16 Amp
 
 #if defined (LIMIT_CURRENTS) // ruedbi
-// my own limits:
-#define MY_PHASE_CURRENT_LIMIT 15 // [A] hard limit for my controllers
-
-// BATTERY_CURRENT_MAX from the UI is used as a flexible max phase current limit
-// from that I derive the max battery current, which is less critical and a bit higher (+1A, losses)
-#if BATTERY_CURRENT_MAX > MY_PHASE_CURRENT_LIMIT
-#error "BATTERY_CURRENT_MAX exceeded MY_PHASE_CURRENT_LIMIT"
-#endif
+#define PHASE_CURRENT_HARD_LIMIT 25 // Amps
+// Summary of the Controller's Logic
+// Input (Battery): "Based on how hard the rider is pedaling, I want to draw X Amps from the battery to give them the right amount of power."
+// Output (Motor): "Wait, before I do that, let me make sure that drawing X Amps won't cause the motor phase current to exceed Y Amps, otherwise I'll melt the motor."
+// This is the Controller's Logic.
+// BATTERY_CURRENT_MAX*6 is the soft limit for the battery current
+// ADC_10_BIT_BATTERY_CURRENT_MAX is the hard limit for the battery current
+// ADC_10_BIT_BATTERY_EXTRACURRENT is the emergency shutdown margin on top of ui8_adc_battery_current_max, which is <=BATTERY_CURRENT_SOFT_LIMIT 
 #undef ADC_10_BIT_BATTERY_EXTRACURRENT
-#define ADC_10_BIT_BATTERY_EXTRACURRENT				((2)*6) // 2A, fixed 
-
+#define ADC_10_BIT_BATTERY_EXTRACURRENT ((BATTERY_CURRENT_HARD_LIMIT-BATTERY_CURRENT_SOFT_LIMIT)*6)
 #undef ADC_10_BIT_BATTERY_CURRENT_MAX
-#define ADC_10_BIT_BATTERY_CURRENT_MAX				((BATTERY_CURRENT_MAX+1)*6)
-
+#define ADC_10_BIT_BATTERY_CURRENT_MAX (BATTERY_CURRENT_SOFT_LIMIT*6)
 #undef ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX
-#define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX			(MY_PHASE_CURRENT_LIMIT*6)
+#define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX (PHASE_CURRENT_LIMIT*6)
+
+// (BATTERY_CURRENT_MAX*6)  < ADC_10_BIT_BATTERY_CURRENT_MAX < (BATTERY_CURRENT_MAX*6)+ADC_10_BIT_BATTERY_EXTRACURRENT:
+#if (BATTERY_CURRENT_MAX*6) > ADC_10_BIT_BATTERY_CURRENT_MAX
+#error "BATTERY_CURRENT_MAX*6 exceeded ADC_10_BIT_BATTERY_CURRENT_MAX"
+#endif
+#if ADC_10_BIT_BATTERY_CURRENT_MAX >= ((BATTERY_CURRENT_MAX*6)+ADC_10_BIT_BATTERY_EXTRACURRENT)
+#error "ADC_10_BIT_BATTERY_CURRENT_MAX >= ((BATTERY_CURRENT_MAX*6)+ADC_10_BIT_BATTERY_EXTRACURRENT)"
+#endif
+#if PHASE_CURRENT_LIMIT > PHASE_CURRENT_HARD_LIMIT
+#error "PHASE_CURRENT_LIMIT exceeded PHASE_CURRENT_HARD_LIMIT"
+#endif
+
 #endif // LIMIT_CURRENTS
 /*---------------------------------------------------------
  NOTE: regarding ADC battery current max
