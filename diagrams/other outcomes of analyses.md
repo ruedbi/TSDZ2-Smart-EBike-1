@@ -856,3 +856,279 @@ if ( // ... other conditions ...
 
 **In summary:** Unlike the *battery overcurrent* (which triggers an E07 error and shuts off the motor entirely), exceeding the *phase current limit* is treated as a normal control boundary. The controller simply reduces the PWM duty cycle (backing off the throttle) until the phase current drops back down below the limit. This prevents the motor coils from burning up while climbing steep hills at low speeds.
 
+---
+
+**User**
+
+what happens when ADC_10_BIT_BATTERY_CURRENT_MAX gets exceeded
+
+---
+
+**Cursor**
+
+When `ADC_10_BIT_BATTERY_CURRENT_MAX` (the hardware safety limit) gets exceeded by the user's configuration, the software prevents the configured value from being used.
+
+Here is the exact sequence of what happens:
+
+1.  **Capping the Configuration:**
+    Every 25ms in `ebike_app_controller()`, the code checks if your configured current limit (`ui8_adc_battery_current_max`) is higher than the absolute safety limit (`ADC_10_BIT_BATTERY_CURRENT_MAX`). If it is, it forcibly overwrites your configured limit with the safety limit:
+    ```c:src/ebike_app.c (lines 585-588)
+    // limit max current if higher than configured hardware limit (safety)
+    if (ui8_adc_battery_current_max > ADC_10_BIT_BATTERY_CURRENT_MAX) {
+        ui8_adc_battery_current_max = ADC_10_BIT_BATTERY_CURRENT_MAX;
+    }
+    ```
+
+2.  **Capping the Target Current:**
+    Because the max limit is now capped, any calculations that try to draw more current (like pedaling hard in Turbo mode) will also be capped. The requested target current is forced to stay at or below this new ceiling:
+    ```c:src/ebike_app.c (lines 593-596)
+    // limit target current if higher than max value (safety)
+    if (ui8_adc_battery_current_target > ui8_adc_battery_current_max) {
+        ui8_adc_battery_current_target = ui8_adc_battery_current_max;
+    }
+    ```
+
+3.  **Motor Control Response:**
+    This target (`ui8_adc_battery_current_target`) is then passed down to the high-frequency motor control loop (`src/motor.c`). If the *actual measured battery current* exceeds this target, the controller automatically reduces the motor power (PWM duty cycle) to bring the current back down:
+    ```c:src/motor.c (lines 805-827)
+    if ( ...
+      || (ui8_controller_adc_battery_current_target < ui8_adc_battery_current_filtered)
+      // ...
+    ) {
+        // ... ramp down duty cycle (reduce power)
+    }
+    ```
+
+**In summary:** If you configure a `BATTERY_CURRENT_MAX` that translates to more than `ADC_10_BIT_BATTERY_CURRENT_MAX` (18 Amps), the system simply ignores the excess. It will act exactly as if you had configured it for 18 Amps. The motor will smoothly limit its power draw to stay at or below 18 Amps, and no error is thrown—it just refuses to give you more power than the hardware limit allows.
+
+---
+
+**User**
+
+why are ui8_adc_battery_current_max  and ui8_adc_battery_current_target  no fixed values
+
+---
+
+**Cursor**
+
+These two variables are dynamic because they represent the **active state** of the controller, which changes constantly as you ride. Here is a detailed explanation of why each is not a fixed value:
+
+### 1. `ui8_adc_battery_current_target` (The "Throttle" Signal)
+This is the core variable that tells the motor how much power to deliver right now. It is never fixed because it is constantly recalculated (every 25ms) based on:
+*   **Your pedaling effort:** In Torque Mode, if you push harder on the pedals, the target goes up.
+*   **Your cadence:** In Cadence Mode, faster pedaling increases the target.
+*   **Assist Level:** Eco mode calculates a much lower target than Turbo mode for the exact same pedal pressure.
+*   **Walk Assist / Cruise Control:** These modes calculate their own specific targets to maintain a steady speed.
+
+In short, `ui8_adc_battery_current_target` is the active output of the pedal assist algorithms. It goes from 0 (coasting) up to whatever limit is currently active.
+
+### 2. `ui8_adc_battery_current_max` (The Active Limit)
+While `BATTERY_CURRENT_MAX` in `config.h` is a fixed number (e.g., 13A), the *active* max limit (`ui8_adc_battery_current_max`) can change dynamically while riding due to several software features:
+
+*   **Street Mode vs. Offroad Mode (Power Limits):**
+    If you have `STREET_MODE_POWER_LIMIT_ENABLED` active, the system calculates a max current limit dynamically based on your battery voltage to ensure you don't exceed the legal wattage (e.g., 250W or 500W). Since battery voltage drops as you discharge it, the current limit must *increase* to maintain the same wattage limit, meaning this max value is constantly shifting.
+*   **Temperature Limiting:**
+    If `ENABLE_TEMPERATURE_LIMIT` is active and the motor gets too hot, the software gradually lowers `ui8_adc_battery_current_max` to restrict power and let the motor cool down.
+*   **Startup / Walk Assist Restrictions:**
+    Walk assist enforces its own strict maximum current (`WALK_ASSIST_ADC_BATTERY_CURRENT_MAX`) which is usually much lower than your normal riding limit.
+
+**To summarize:**
+*   `BATTERY_CURRENT_MAX` (config) = The absolute maximum you *want* to allow.
+*   `ui8_adc_battery_current_max` (dynamic) = The actual limit applied *right now* (can be lower if the motor is hot, or if street mode power limits are active).
+*   `ui8_adc_battery_current_target` (dynamic) = How much power the motor should deliver *this exact millisecond* based on how hard you are pedaling.
+
+---
+
+**User**
+
+that basically means that the power is managed on the input side of the controller, not on the motor side, right
+
+---
+
+**Cursor**
+
+Yes, your understanding is fundamentally correct!
+
+The primary "throttle" or power management in the TSDZ2 firmware is driven by the **input side (battery current)**, while the **motor side (phase current)** acts mostly as a safety limiter.
+
+Here is why it is designed this way:
+
+### 1. Battery Side = Power Control (The "Target")
+The firmware calculates how much assist to give you based on your pedaling (torque or cadence). It translates this effort into a **Target Battery Current** (`ui8_adc_battery_current_target`). 
+
+Why use the battery side for this? Because battery voltage is relatively stable. 
+*   `Power (Watts) = Battery Voltage × Battery Current`
+*   By controlling the battery current, the controller is directly controlling the **total power** being fed into the system. If you want 250 Watts of assist, the controller knows exactly how much battery current to draw to give you 250 Watts.
+
+### 2. Motor Side = Hardware Protection (The "Ceiling")
+The **Motor Phase Current** is completely different from the battery current, especially at low speeds. The controller acts like a transformer (buck converter). 
+*   If you are climbing a steep hill at 5 km/h, the motor needs high torque (which requires high phase current). 
+*   The controller might draw only **10 Amps** from the battery (input), but transform that into **25 Amps** going through the motor coils (output). 
+
+If the firmware *only* managed the input side, drawing 15 Amps from the battery at near-zero speeds could result in 50+ Amps in the motor coils, which would melt the copper wires or strip the nylon gears.
+
+Therefore, the motor side is used as a **hard ceiling**. The code constantly monitors `ui8_adc_motor_phase_current`. It doesn't use it to decide how much assist you *should* get, but if that value hits the safety cap (`ui8_adc_motor_phase_current_max`, e.g., 30A), it overrides your pedaling request and forces the power down to protect the hardware.
+
+### Summary of the Controller's Logic
+1.  **Input (Battery):** "Based on how hard the rider is pedaling, I want to draw **X Amps** from the battery to give them the right amount of power."
+2.  **Output (Motor):** "Wait, before I do that, let me make sure that drawing X Amps won't cause the motor phase current to exceed **Y Amps**, otherwise I'll melt the motor."
+
+---
+
+**User**
+
+@src/main.h:224-251 @src/common.h:50-55 review the code
+
+---
+
+**Cursor**
+
+Here is a review of your code changes. You've correctly understood the relationship between the different variables, but there are **three important issues** regarding precision, trip-point scaling, and a side-effect on motor torque that you should address.
+
+### 1. Inaccuracy in the `* 6` Conversion Factor
+You are multiplying your Amp values by `6` to get ADC steps. However, `BATTERY_CURRENT_PER_10_BIT_ADC_STEP_X100` is defined as `16` (meaning 1 step = 0.16 Amps). 
+The exact conversion factor is `1 / 0.16 = 6.25`. 
+
+By using `6`, you are under-calculating the limits by about 4%:
+* Your `BATTERY_CURRENT_SOFT_LIMIT` of 16A becomes `16 * 6 = 96 steps`. 
+* `96 steps * 0.16A = 15.36 Amps` (not 16 Amps).
+
+**Recommendation:** Use `* 100 / 16` to perfectly match the firmware's internal math.
+```c
+#define ADC_10_BIT_BATTERY_CURRENT_MAX ((BATTERY_CURRENT_SOFT_LIMIT * 100) / 16)
+```
+
+### 2. The Overcurrent Trip Point (Emergency Margin)
+In `ebike_app.c`, the trip threshold is calculated dynamically by adding the margin to the **active** current limit:
+`ui8_adc_battery_overcurrent = ui8_adc_battery_current_max + ADC_10_BIT_BATTERY_EXTRACURRENT`
+
+In your code, you defined the margin based on `BATTERY_CURRENT_MAX` (13A):
+`Margin = 22A - 13A = 9A`
+
+Because the margin is a fixed **9 Amps**, if your LCD (or soft limit) allows the active current to reach `BATTERY_CURRENT_SOFT_LIMIT` (16A), the trip point will float up to **25 Amps** (`16A + 9A`), which defeats your intended `HARD_LIMIT` of 22A.
+
+**Recommendation:** Calculate the margin relative to the soft limit so that the trip point never exceeds 22A, even if the bike is operating at the absolute maximum soft limit (16A).
+```c
+#define ADC_10_BIT_BATTERY_EXTRACURRENT (((BATTERY_CURRENT_HARD_LIMIT - BATTERY_CURRENT_SOFT_LIMIT) * 100) / 16)
+```
+
+### 3. Unintended Loss of Torque (Motor Phase Current Scaling)
+This is the most critical side effect. In `ebike_app.c`, the motor phase current limit is dynamically scaled using the ratio of your hard limits:
+`Phase Limit = User Configured Battery Limit * (PHASE_CURRENT_MAX / BATTERY_CURRENT_MAX)`
+
+*   **Original Firmware:** `13A * (30A / 18A) = 21.6A` Phase Current
+*   **Your Code:** `13A * (20A / 16A) = 16.25A` Phase Current
+
+Because you changed the ratio from **1.66** to **1.25**, the controller will push significantly less current into the motor coils at low speeds. **You will experience a noticeable loss of torque** when starting from a standstill or climbing steep hills. 
+
+**Recommendation:** If your goal is to protect the motor by capping it at 20A, your code will safely achieve that. However, if you didn't intend to weaken the low-speed torque profile at 13A, you may want to rethink the `PHASE_CURRENT_LIMIT`. Setting it to `22` or `24` would restore a ratio closer to 1.5, bringing the low-speed torque back up while still being much safer than the original 30A limit.
+
+### Suggested Corrected Code (`src/main.h`)
+
+```c
+#if defined (LIMIT_CURRENTS) // ruedbi
+
+#define PHASE_CURRENT_HARD_LIMIT 25 // Amps
+
+// Convert Amps to ADC steps perfectly (1 step = 0.16A)
+#undef ADC_10_BIT_BATTERY_CURRENT_MAX
+#define ADC_10_BIT_BATTERY_CURRENT_MAX ((BATTERY_CURRENT_SOFT_LIMIT * 100) / 16)
+
+// Margin is calculated relative to the Soft Limit to ensure the Hard Limit is never exceeded
+#undef ADC_10_BIT_BATTERY_EXTRACURRENT
+#define ADC_10_BIT_BATTERY_EXTRACURRENT (((BATTERY_CURRENT_HARD_LIMIT - BATTERY_CURRENT_SOFT_LIMIT) * 100) / 16)
+
+#undef ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX
+#define ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX ((PHASE_CURRENT_LIMIT * 100) / 16)
+
+// Sanity check macros (using exact math to avoid truncation errors in #if checks)
+#if (BATTERY_CURRENT_MAX * 100 / 16) > ADC_10_BIT_BATTERY_CURRENT_MAX
+#error "BATTERY_CURRENT_MAX exceeded BATTERY_CURRENT_SOFT_LIMIT"
+#endif
+
+#if BATTERY_CURRENT_SOFT_LIMIT >= BATTERY_CURRENT_HARD_LIMIT
+#error "BATTERY_CURRENT_SOFT_LIMIT must be strictly less than BATTERY_CURRENT_HARD_LIMIT"
+#endif
+
+#if PHASE_CURRENT_LIMIT > PHASE_CURRENT_HARD_LIMIT
+#error "PHASE_CURRENT_LIMIT exceeded PHASE_CURRENT_HARD_LIMIT"
+#endif
+
+#endif // LIMIT_CURRENTS
+```
+
+---
+
+**User**
+
+at which rate are battery- and phase current measured and at which rate are they adjusted
+
+---
+
+**Cursor**
+
+Based on the codebase analysis, here is how the currents are measured and adjusted:
+
+### 1. The Measurement Rate (High Frequency)
+Both the **Battery Current** and the **Motor Phase Current** are measured and calculated inside the core motor PWM interrupt loop.
+
+*   **Frequency:** They are measured at the exact same frequency as the PWM switching frequency, which is either **18 kHz** or **19 kHz** (defined by `PWM_FREQ`). 
+*   **Time interval:** This means the hardware reads the ADC (Analog-to-Digital Converter) and updates the current values every **~55 microseconds** (`1/18000` seconds).
+*   **Where in code:** This happens inside the `TIM1_UPD_OVF_TRG_BRK_IRQHandler` function in `src/motor.c` (around line 640+). The battery current is read directly from the ADC, and the phase current is instantly mathematically derived from the battery current and the current PWM duty cycle.
+
+### 2. The Adjustment Rate (Two-Tiered)
+
+The firmware adjusts these currents at two completely different rates:
+
+#### A. The "Target" Calculation Rate (Low Frequency)
+The overall "Target" for the battery current (`ui8_adc_battery_current_target`)—which is based on your pedaling torque, cadence, and assist level—is calculated in the main application loop.
+
+*   **Frequency:** Every **25 milliseconds** (40 Hz).
+*   **Where in code:** Inside `ebike_app_controller()` in `src/ebike_app.c`, which is triggered by the main loop in `src/main.c`.
+*   **What it does:** Every 25ms, the system looks at the rider's inputs and decides, "Okay, for the next 25ms, the goal is to draw exactly X Amps."
+
+#### B. The Motor Control Adjustment Rate (High Frequency)
+While the *goal* is updated every 25ms, the actual *adjustment* of power (to reach that goal and respect safety limits) happens inside the same high-frequency PWM interrupt where the measurements are taken.
+
+*   **Frequency:** Up to **18 kHz / 19 kHz** (every ~55 microseconds).
+*   **Where in code:** Also in the `TIM1_UPD_OVF_TRG_BRK_IRQHandler` in `src/motor.c` (around line 800+).
+*   **What it does:** Every 55 microseconds, the code checks:
+    1. Is the actual battery current lower/higher than the 25ms target?
+    2. Is the actual phase current exceeding the hard safety limit?
+    *   If power needs to go up or down, it increments or decrements the PWM duty cycle right then and there.
+
+**Summary:** 
+*   **Measured:** Every ~55 microseconds (18-19 kHz).
+*   **Rider Input Evaluated:** Every 25 milliseconds (40 Hz).
+*   **Power Adjusted (Duty Cycle changed):** Evaluated every ~55 microseconds, ensuring the motor responds instantly to limit-breaches while smoothly ramping up to the rider's 25ms pedaling targets.
+
+---
+
+**User**
+
+for BATTERY_CURRENT_MAX values in the range 10..15, create a table of max battery- and phase currents
+
+---
+
+**Cursor**
+
+Based on the firmware's standard integer math, here is a table showing exactly how different `BATTERY_CURRENT_MAX` settings between 10A and 15A translate into internal ADC steps and actual motor phase current limits.
+
+### How the math works in the C code:
+1. **Battery Limit (ADC Steps):** `(Configured_Amps * 100) / 16` (decimals are truncated/rounded down).
+2. **Phase Limit (ADC Steps):** `(Battery_ADC_Steps * 187) / 112` (decimals are truncated).
+3. **Actual Phase Amps:** `Phase_ADC_Steps * 0.16`
+
+### The Current Limits Table
+
+| Configured `BATTERY_CURRENT_MAX` | Target Battery Limit (ADC Steps) | Calculated Phase Limit (ADC Steps) | **Max Motor Phase Current (Amps)** |
+| :---: | :---: | :---: | :---: |
+| **10 A** | 62 | 103 | **16.48 A** |
+| **11 A** | 68 | 113 | **18.08 A** |
+| **12 A** | 75 | 125 | **20.00 A** |
+| **13 A** | 81 | 135 | **21.60 A** |
+| **14 A** | 87 | 145 | **23.20 A** |
+| **15 A** | 93 | 155 | **24.80 A** |
+
+*Note: The hardcoded absolute safety limits in the firmware are 112 steps (18.0A) for the battery and 187 steps (29.92A) for the motor phases. None of the values in the 10-15A range hit these safety ceilings, so these calculated limits are what the ones actually applied while riding.*
+
