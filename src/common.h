@@ -53,6 +53,17 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define BATTERY_CURRENT_HARD_LIMIT 22 // Amps, must exceed soft limit by some margin
 #define PHASE_CURRENT_LIMIT 20 // Amps; OSF default: 30A
 
+
+// Speed-dependent motor phase current limit (see ebike_app.c)
+#define PHASE_CURRENT_SPEED_LIMIT_ENABLED 1
+#if PHASE_CURRENT_SPEED_LIMIT_ENABLED
+// Wheel speed km/h * 10 (same units as ui16_wheel_speed_x10)
+#define PHASE_CURRENT_SPEED_LOW_X10 80
+#define PHASE_CURRENT_SPEED_MEDIUM_X10 150
+// Phase current ADC limit above speed medium; ~0.16 A per step = 16A
+#define ADC_10_BIT_MOTOR_PHASE_CURRENT_PROTECT 100
+#endif // PHASE_CURRENT_SPEED_LIMIT_ENABLED
+
 #endif // ENABLE_VLCD5
 
 #endif /* COMMON_COMMON_H_ */

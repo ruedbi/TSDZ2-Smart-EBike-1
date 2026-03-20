@@ -111,6 +111,7 @@ static uint8_t ui8_adc_battery_current_target = 0;
 static uint8_t ui8_duty_cycle_target = 0;
 static uint16_t ui16_duty_cycle_percent = 0;
 volatile uint8_t ui8_adc_motor_phase_current_max = ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
+static uint8_t ui8_adc_motor_phase_current_max_full = ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
 static uint8_t ui8_error_battery_overcurrent = 0;
 static uint8_t ui8_error_battery_overcurrent_counter = 0;
 static uint8_t ui8_battery_overcurrent_delay = OVERCURRENT_DELAY;
@@ -167,6 +168,7 @@ static uint8_t ui8_pedal_torque_per_10_bit_ADC_step_x100_array[2];
 static uint8_t ui8_eMTB_based_on_power = eMTB_BASED_ON_POWER;
 
 // wheel speed sensor
+// ruedbi: Wheel speed in units of 0.1 km/h (i.e., km/h * 10):
 static uint16_t ui16_wheel_speed_x10 = 0;
 static uint8_t ui8_wheel_speed_max = WHEEL_MAX_SPEED;
 static uint8_t ui8_wheel_speed_max_array[2] = {WHEEL_MAX_SPEED,STREET_MODE_SPEED_LIMIT};
@@ -268,6 +270,8 @@ static void get_battery_voltage(void);
 static void get_pedal_torque(void);
 static void calc_wheel_speed(void);
 static void calc_cadence(void);
+static void recalc_motor_phase_current_max_full(void);
+static void apply_motor_phase_current_speed_limit(void);
 
 static void ebike_control_lights(void);
 static void ebike_control_motor(void);
@@ -418,13 +422,67 @@ void ebike_app_init(void)
 	ui32_adc_battery_power_max_x10_array[STREET_MODE] = (uint32_t)((uint32_t)STREET_MODE_POWER_LIMIT * 1000U)
 		/ BATTERY_CURRENT_PER_10_BIT_ADC_STEP_X100;
 	
-	// set max motor phase current
-	uint16_t ui16_temp = ui8_adc_battery_current_max_temp_1 * ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
-	ui8_adc_motor_phase_current_max = (uint8_t)(ui16_temp / ADC_10_BIT_BATTERY_CURRENT_MAX);
-	// limit max motor phase current if higher than configured hardware limit (safety)
-	if (ui8_adc_motor_phase_current_max > ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX) {
-		ui8_adc_motor_phase_current_max = ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
+	// set max motor phase current (full limit before speed-dependent reduction)
+	recalc_motor_phase_current_max_full();
+	apply_motor_phase_current_speed_limit();
+}
+
+
+static void recalc_motor_phase_current_max_full(void)
+{
+	uint16_t ui16_temp = (uint16_t)ui8_adc_battery_current_max_temp_1 * (uint16_t)ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
+	ui8_adc_motor_phase_current_max_full = (uint8_t)(ui16_temp / (uint16_t)ADC_10_BIT_BATTERY_CURRENT_MAX);
+	if (ui8_adc_motor_phase_current_max_full > ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX) {
+		ui8_adc_motor_phase_current_max_full = ADC_10_BIT_MOTOR_PHASE_CURRENT_MAX;
 	}
+}
+
+
+// Sets ui8_adc_motor_phase_current_max (read by motor PWM ISR) from the full scaled limit and wheel speed.
+// When enabled: full phase headroom at low speed, linear taper between speed thresholds, fixed protect cap above.
+static void apply_motor_phase_current_speed_limit(void)
+{
+#if !PHASE_CURRENT_SPEED_LIMIT_ENABLED
+	// Feature off: ISR limit equals the scaled full limit (no speed-based reduction).
+	ui8_adc_motor_phase_current_max = ui8_adc_motor_phase_current_max_full;
+#else
+	{
+		// Maximum phase-current limit (ADC steps) before speed reduction — from battery scale and hardware cap.
+		uint8_t ui8_phase_limit_full_adc = ui8_adc_motor_phase_current_max_full;
+		// Phase-current ceiling (ADC steps) used at and above PHASE_CURRENT_SPEED_MEDIUM_X10.
+		uint8_t ui8_phase_limit_protect_adc = (uint8_t)ADC_10_BIT_MOTOR_PHASE_CURRENT_PROTECT;
+		// Wheel speed in (km/h * 10), same unit as PHASE_CURRENT_SPEED_*_X10.
+		uint16_t ui16_wheel_speed_kmh_x10 = ui16_wheel_speed_x10;
+
+		// Protect cannot exceed the low-speed full limit (misconfiguration safety).
+		if (ui8_phase_limit_protect_adc > ui8_phase_limit_full_adc) {
+			ui8_phase_limit_protect_adc = ui8_phase_limit_full_adc;
+		}
+
+		// Region 1: at or below low-speed threshold — allow full calculated phase limit (starts, hills).
+		if (ui16_wheel_speed_kmh_x10 <= (uint16_t)PHASE_CURRENT_SPEED_LOW_X10) {
+			ui8_adc_motor_phase_current_max = ui8_phase_limit_full_adc;
+		}
+		// Region 3: at or above medium-speed threshold — enforce constant protect limit only.
+		else if (ui16_wheel_speed_kmh_x10 >= (uint16_t)PHASE_CURRENT_SPEED_MEDIUM_X10) {
+			ui8_adc_motor_phase_current_max = ui8_phase_limit_protect_adc;
+		}
+		// Region 2: between low and medium — linear decrease: full at low edge, protect at medium edge.
+		else {
+			uint16_t ui16_speed_ramp_width_x10 = (uint16_t)PHASE_CURRENT_SPEED_MEDIUM_X10
+				- (uint16_t)PHASE_CURRENT_SPEED_LOW_X10;
+			uint16_t ui16_speed_into_ramp_x10 = ui16_wheel_speed_kmh_x10
+				- (uint16_t)PHASE_CURRENT_SPEED_LOW_X10;
+			uint16_t ui16_phase_drop_range_adc = (uint16_t)(ui8_phase_limit_full_adc - ui8_phase_limit_protect_adc);
+			// Fraction of the drop applied at current speed: drop_range * (speed - low) / (medium - low).
+			uint16_t ui16_phase_reduction_adc = (uint16_t)(
+				((uint32_t)ui16_phase_drop_range_adc * (uint32_t)ui16_speed_into_ramp_x10)
+				/ (uint32_t)ui16_speed_ramp_width_x10);
+			uint8_t ui8_phase_limit_effective_adc = (uint8_t)((uint16_t)ui8_phase_limit_full_adc - ui16_phase_reduction_adc);
+			ui8_adc_motor_phase_current_max = ui8_phase_limit_effective_adc;
+		}
+	}
+#endif
 }
 
 
@@ -475,6 +533,9 @@ void ebike_app_controller(void)
 	
 	// get pedal torque
 	get_pedal_torque();
+
+	// Phase limit vs wheel speed (after UART may have refreshed battery/phase full)
+	apply_motor_phase_current_speed_limit();
 	
 	// use received data and sensor input to control motor
     ebike_control_motor();
@@ -3057,7 +3118,11 @@ static void uart_receive_package(void)
 				    ui8_wheel_speed_max = ui8_wheel_speed_max_array[m_configuration_variables.ui8_street_mode_enabled];
 			}
 			
-			// current limit with power limit
+			// max battery current from configured limit (ADC steps), then power-limited cap
+			ui8_adc_battery_current_max_temp_1 = (uint8_t)((uint16_t)(m_configuration_variables.ui8_battery_current_max * 100U)
+				/ BATTERY_CURRENT_PER_10_BIT_ADC_STEP_X100);
+			recalc_motor_phase_current_max_full();
+
 			ui8_adc_battery_current_max_temp_2 = (uint8_t)((uint32_t)(ui32_adc_battery_power_max_x10_array[m_configuration_variables.ui8_street_mode_enabled]
 				/ ui16_battery_voltage_filtered_x10));
 			
