@@ -11,7 +11,7 @@ else
 	echo "Release build"
 fi
 
-version="v291_${MODE}_current_limited_20A"
+version="v293_${MODE}_speed_dependent_phase_current"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
