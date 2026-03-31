@@ -177,6 +177,43 @@ static uint8_t ui8_max_offroad_speed_from_display = WHEEL_MAX_SPEED;
 // tracks which speed limit is active in offroad mode: 0 = offroad (scaled), 1 = street (25 km/h)
 static uint8_t ui8_speed_limit_in_offroad_mode = OFFROAD_MODE;
 
+// gesture recognizer: direction constants used in gesture sequence definitions
+#define GESTURE_DIRECTION_UP   0U
+#define GESTURE_DIRECTION_DOWN 1U
+
+/// Maximum number of steps a single gesture may have and the size of the direction ring buffer.
+#define GESTURE_BUFFER_SIZE    8U
+
+/// Number of 100 ms ticks without a new direction event after which a partially matched
+/// gesture sequence is discarded and recognition restarts from the beginning.
+#define GESTURE_TIMEOUT_STEPS  30U
+
+/// Compile-time description of one recognizable gesture sequence.
+typedef struct {
+    const uint8_t *sequence;  // pointer to the direction steps (GESTURE_DIRECTION_UP / GESTURE_DIRECTION_DOWN)
+    uint8_t        length;    // number of steps in the sequence
+} GestureDefinition;
+
+// gesture sequence for the offroad speed-limit toggle: DOWN – UP – DOWN – UP
+static const uint8_t s_speedToggleSequence[4U] = {
+    GESTURE_DIRECTION_DOWN, GESTURE_DIRECTION_UP,
+    GESTURE_DIRECTION_DOWN, GESTURE_DIRECTION_UP
+};
+
+/// Table of all hardcoded gestures.  Add further entries here to define new gestures.
+static const GestureDefinition s_gestureDefinitions[] = {
+    { s_speedToggleSequence, 4U }   // gesture 0: offroad speed-limit toggle
+};
+
+/// Ring buffer that holds the last GESTURE_BUFFER_SIZE direction events.
+static uint8_t s_gestureDirectionBuffer[GESTURE_BUFFER_SIZE];
+
+/// Number of valid direction events currently stored in s_gestureDirectionBuffer.
+static uint8_t s_gestureBufferCount = 0U;
+
+/// Counts 100 ms ticks since the last direction event; used to expire incomplete gestures.
+static uint8_t s_gestureTimeoutCounter = 0U;
+
 // wheel speed display
 static uint8_t ui8_display_ready_flag = 0;
 static uint8_t ui8_startup_counter = 0;
@@ -264,6 +301,9 @@ static uint8_t  ui8_riding_mode_parameter_array[8][5] = {
 // communications functions
 static void uart_receive_package(void);
 static void uart_send_package(void);
+
+// gesture recognition
+static void process_assist_level_gesture(uint8_t previousLevel, uint8_t newLevel);
 
 // system functions
 static void get_battery_voltage(void);
@@ -2352,6 +2392,104 @@ void UART2_IRQHandler(void) __interrupt(UART2_IRQHANDLER)
 }
 
 
+/// \brief Executes the action associated with gesture index \p gestureIndex.
+///
+/// Each gesture index corresponds to one entry in s_gestureDefinitions.
+/// \param gestureIndex  Zero-based index into s_gestureDefinitions.
+static void execute_gesture_action(uint8_t gestureIndex)
+{
+    if (0U == gestureIndex) {
+        // gesture 0: toggle between offroad speed limit and street speed limit (offroad mode only)
+        if (OFFROAD_MODE == m_configuration_variables.ui8_street_mode_enabled) {
+            ui8_speed_limit_in_offroad_mode = 1U - ui8_speed_limit_in_offroad_mode;
+        }
+    }
+    // further gesture actions can be added here with additional if-blocks
+}
+
+/// \brief Feeds one assist-level change into the gesture recognizer.
+///
+/// Must be called every time a new assist level is decoded from the display, before
+/// ui8_assist_level_temp is overwritten with the new value.  The function:
+///   1. Advances the timeout counter and clears the buffer when it expires.
+///   2. Detects the direction (UP / DOWN) from the level change.
+///   3. Appends the direction to the ring buffer and resets the timeout counter.
+///   4. Checks every gesture definition against the tail of the buffer; fires the
+///      associated action when a full match is found and then clears the buffer.
+///
+/// \param previousLevel  Assist level from the previous UART frame (ui8_assist_level_temp).
+/// \param newLevel       Assist level decoded from the current UART frame (ui8_assist_level).
+static void process_assist_level_gesture(uint8_t previousLevel, uint8_t newLevel)
+{
+    // advance timeout while a partial sequence is in flight
+    if (s_gestureBufferCount > 0U) {
+        s_gestureTimeoutCounter++;
+        if (s_gestureTimeoutCounter >= GESTURE_TIMEOUT_STEPS) {
+            // sequence took too long — discard and start over
+            s_gestureBufferCount = 0U;
+            s_gestureTimeoutCounter = 0U;
+            return;
+        }
+    }
+
+    // determine direction from the level change; no event when level is unchanged
+    uint8_t direction;
+    if (newLevel > previousLevel) {
+        direction = GESTURE_DIRECTION_UP;
+    } else if (newLevel < previousLevel) {
+        direction = GESTURE_DIRECTION_DOWN;
+    } else {
+        return; // same level: not a gesture step
+    }
+
+    // append direction to ring buffer, overwriting the oldest entry when full
+    uint8_t insertIndex = s_gestureBufferCount < GESTURE_BUFFER_SIZE
+        ? s_gestureBufferCount
+        : (uint8_t)(GESTURE_BUFFER_SIZE - 1U);
+
+    if (s_gestureBufferCount >= GESTURE_BUFFER_SIZE) {
+        // shift existing entries one position to the left to make room at the end
+        uint8_t shiftIndex;
+        for (shiftIndex = 0U; shiftIndex < (uint8_t)(GESTURE_BUFFER_SIZE - 1U); shiftIndex++) {
+            s_gestureDirectionBuffer[shiftIndex] = s_gestureDirectionBuffer[shiftIndex + 1U];
+        }
+    } else {
+        s_gestureBufferCount++;
+    }
+    s_gestureDirectionBuffer[insertIndex] = direction;
+    s_gestureTimeoutCounter = 0U;
+
+    // check every defined gesture against the tail of the direction buffer
+    uint8_t gestureIndex;
+    uint8_t gestureCount = (uint8_t)(sizeof(s_gestureDefinitions) / sizeof(s_gestureDefinitions[0]));
+    for (gestureIndex = 0U; gestureIndex < gestureCount; gestureIndex++) {
+        const GestureDefinition *definition = &s_gestureDefinitions[gestureIndex];
+
+        if (s_gestureBufferCount < definition->length) {
+            continue; // not enough events accumulated yet for this gesture
+        }
+
+        // compare the tail of the buffer with the gesture sequence
+        uint8_t startOffset = s_gestureBufferCount - definition->length;
+        uint8_t stepIndex;
+        uint8_t matched = 1U;
+        for (stepIndex = 0U; stepIndex < definition->length; stepIndex++) {
+            if (s_gestureDirectionBuffer[startOffset + stepIndex] != definition->sequence[stepIndex]) {
+                matched = 0U;
+                break;
+            }
+        }
+
+        if (1U == matched) {
+            execute_gesture_action(gestureIndex);
+            // clear the buffer so the same gesture cannot re-trigger immediately
+            s_gestureBufferCount = 0U;
+            s_gestureTimeoutCounter = 0U;
+            break;
+        }
+    }
+}
+
 static void uart_receive_package(void)
 {
 	uint8_t ui8_i;
@@ -2417,12 +2555,9 @@ static void uart_receive_package(void)
 #endif
 			}
 			
-			// offroad mode: OFF->non-OFF gesture toggles between offroad and street speed limit
-			if ((m_configuration_variables.ui8_street_mode_enabled == OFFROAD_MODE)
-				&& (ui8_assist_level_temp == OFF) && (ui8_assist_level != OFF)) {
-				ui8_speed_limit_in_offroad_mode = 1U - ui8_speed_limit_in_offroad_mode;
-				ui8_assist_level_temp = ui8_assist_level;  // avoid double-trigger on repeated 0x00 before 0x02
-			}
+			// feed the assist-level change into the gesture recognizer; must be called before
+			// ui8_assist_level_temp is overwritten with the new value at the end of this function
+			process_assist_level_gesture(ui8_assist_level_temp, ui8_assist_level);
 			
 			if (!ui8_display_ready_flag) {
 				// assist level temp at power on
