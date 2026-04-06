@@ -200,9 +200,16 @@ static const uint8_t s_speedToggleSequence[4U] = {
     GESTURE_DIRECTION_DOWN, GESTURE_DIRECTION_UP
 };
 
+// gesture sequence to enable offroad mode: UP – UP – UP – UP – UP – DOWN
+static const uint8_t s_enableOffroadSequence[6U] = {
+    GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP,
+    GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP, GESTURE_DIRECTION_DOWN
+};
+
 /// Table of all hardcoded gestures.  Add further entries here to define new gestures.
 static const GestureDefinition s_gestureDefinitions[] = {
-    { s_speedToggleSequence, 4U }   // gesture 0: offroad speed-limit toggle
+    { s_speedToggleSequence, 4U },    // gesture 0: offroad speed-limit toggle
+    { s_enableOffroadSequence, 6U }   // gesture 1: enable offroad mode (no toggle)
 };
 
 /// Ring buffer that holds the last GESTURE_BUFFER_SIZE direction events.
@@ -2403,6 +2410,10 @@ static void execute_gesture_action(uint8_t gestureIndex)
         if (OFFROAD_MODE == m_configuration_variables.ui8_street_mode_enabled) {
             ui8_speed_limit_in_offroad_mode = 1U - ui8_speed_limit_in_offroad_mode;
         }
+    } else if (1U == gestureIndex) {
+        // gesture 1: force offroad mode (do not toggle)
+        m_configuration_variables.ui8_street_mode_enabled = OFFROAD_MODE;
+        ui8_speed_limit_in_offroad_mode = OFFROAD_MODE;
     }
     // further gesture actions can be added here with additional if-blocks
 }
