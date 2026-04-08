@@ -2399,6 +2399,38 @@ void UART2_IRQHandler(void) __interrupt(UART2_IRQHANDLER)
 }
 
 
+/// \brief Converts the assist level mask from the display into a sequential 0-5 index.
+///
+/// This ensures that UP/DOWN gesture detection works correctly even when the 5th assist
+/// level is logically mapped to ECO or TURBO depending on ASSIST_LEVEL_5_MODE.
+/// \param mask  The assist level mask from the UART payload (ui8_assist_level_mask).
+/// \return Sequential index 0 to 5.
+static uint8_t get_sequential_display_level(uint8_t mask)
+{
+    switch (mask) {
+        case ASSIST_PEDAL_LEVEL0: return 0U;
+#if ASSIST_LEVEL_5_MODE == BEFORE_ECO
+        case ASSIST_PEDAL_LEVEL5: return 1U;
+        case ASSIST_PEDAL_LEVEL1: return 2U;
+        case ASSIST_PEDAL_LEVEL2: return 3U;
+        case ASSIST_PEDAL_LEVEL3: return 4U;
+        case ASSIST_PEDAL_LEVEL4: return 5U;
+#elif ASSIST_LEVEL_5_MODE == AFTER_TURBO
+        case ASSIST_PEDAL_LEVEL1: return 1U;
+        case ASSIST_PEDAL_LEVEL2: return 2U;
+        case ASSIST_PEDAL_LEVEL3: return 3U;
+        case ASSIST_PEDAL_LEVEL4: return 4U;
+        case ASSIST_PEDAL_LEVEL5: return 5U;
+#else
+        case ASSIST_PEDAL_LEVEL1: return 1U;
+        case ASSIST_PEDAL_LEVEL2: return 2U;
+        case ASSIST_PEDAL_LEVEL3: return 3U;
+        case ASSIST_PEDAL_LEVEL4: return 4U;
+#endif
+        default: return 0U;
+    }
+}
+
 /// \brief Executes the action associated with gesture index \p gestureIndex.
 ///
 /// Each gesture index corresponds to one entry in s_gestureDefinitions.
@@ -2566,13 +2598,20 @@ static void uart_receive_package(void)
 #endif
 			}
 			
-			// feed the assist-level change into the gesture recognizer; must be called before
-			// ui8_assist_level_temp is overwritten with the new value at the end of this function
-			process_assist_level_gesture(ui8_assist_level_temp, ui8_assist_level);
+			static uint8_t ui8_display_level_temp = 0;
+			uint8_t ui8_display_level = get_sequential_display_level(ui8_assist_level_mask);
+			
+			// feed the sequential display level into the gesture recognizer; must be called before
+			// ui8_display_level_temp is overwritten with the new value
+			process_assist_level_gesture(ui8_display_level_temp, ui8_display_level);
 			
 			if (!ui8_display_ready_flag) {
 				// assist level temp at power on
 				ui8_assist_level_temp = ui8_assist_level;
+				ui8_display_level_temp = ui8_display_level;
+			} else {
+				// update the display level temp for the next gesture check
+				ui8_display_level_temp = ui8_display_level;
 			}
 			// display ready
 			ui8_display_ready_flag = 1;
