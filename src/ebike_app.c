@@ -221,6 +221,14 @@ static uint8_t s_gestureBufferCount = 0U;
 /// Counts 100 ms ticks since the last direction event; used to expire incomplete gestures.
 static uint8_t s_gestureTimeoutCounter = 0U;
 
+/// Number of 100 ms ticks of standstill required before the offroad speed limit
+/// automatically reverts to street limit.  1200 * 100 ms = 2 minutes.
+#define STANDSTILL_OFFROAD_REVERT_STEPS 1200U
+
+/// Counts consecutive 100 ms ticks where the bike is standing still while
+/// the offroad speed limit is active; resets to zero when moving or when revert fires.
+static uint16_t s_standstillOffroadRevertCounter = 0U;
+
 // wheel speed display
 static uint8_t ui8_display_ready_flag = 0;
 static uint8_t ui8_startup_counter = 0;
@@ -311,6 +319,7 @@ static void uart_send_package(void);
 
 // gesture recognition
 static void process_assist_level_gesture(uint8_t previousLevel, uint8_t newLevel);
+static void check_standstill_offroad_revert(void);
 
 // system functions
 static void get_battery_voltage(void);
@@ -2533,6 +2542,28 @@ static void process_assist_level_gesture(uint8_t previousLevel, uint8_t newLevel
     }
 }
 
+/// \brief Reverts the offroad speed limit to street limit after prolonged standstill.
+///
+/// Must be called once per 100 ms cycle.  When the bike is in offroad mode with the
+/// offroad speed limit selected and the wheel speed is zero, a counter increments.
+/// After STANDSTILL_OFFROAD_REVERT_STEPS consecutive zero-speed ticks (2 minutes)
+/// the speed limit is automatically switched back to street limit for safety.
+/// Any wheel movement or a non-offroad state resets the counter.
+static void check_standstill_offroad_revert(void)
+{
+    if ((OFFROAD_MODE == m_configuration_variables.ui8_street_mode_enabled)
+        && (OFFROAD_MODE == ui8_speed_limit_in_offroad_mode)
+        && (0U == ui16_wheel_speed_x10)) {
+        s_standstillOffroadRevertCounter++;
+        if (s_standstillOffroadRevertCounter >= STANDSTILL_OFFROAD_REVERT_STEPS) {
+            ui8_speed_limit_in_offroad_mode = STREET_MODE;
+            s_standstillOffroadRevertCounter = 0U;
+        }
+    } else {
+        s_standstillOffroadRevertCounter = 0U;
+    }
+}
+
 static void uart_receive_package(void)
 {
 	uint8_t ui8_i;
@@ -2670,9 +2701,7 @@ static void uart_receive_package(void)
 							case ECO:
 								switch (ui8_menu_index) {
 									case 2:
-										// restore previous street mode
-										m_configuration_variables.ui8_street_mode_enabled = ui8_street_mode_enabled_temp;
-										ui8_display_function_status[0][ECO] = m_configuration_variables.ui8_street_mode_enabled;
+										// restore of street mode disabled; offroad mode is gesture-controlled only
 										break;
 									case 3:
 										// restore previous startup boost
@@ -2852,13 +2881,8 @@ static void uart_receive_package(void)
 							// set street/offroad mode
 							switch (ui8_menu_index) {
 								case 1:
-									// for restore street mode
-									ui8_street_mode_enabled_temp = m_configuration_variables.ui8_street_mode_enabled;
-									
-									// change street mode
-									m_configuration_variables.ui8_street_mode_enabled = !m_configuration_variables.ui8_street_mode_enabled;
-									ui8_display_function_status[0][ECO] = m_configuration_variables.ui8_street_mode_enabled;
-									ui8_speed_limit_in_offroad_mode = OFFROAD_MODE;  // reset offroad toggle when switching mode
+									// street/offroad switching via display menu is disabled;
+									// offroad mode is only reachable through assist-level gestures
 									break;
 								case 2:																		 
 									// for restore startup boost
@@ -3281,6 +3305,9 @@ static void uart_receive_package(void)
 				m_configuration_variables.ui16_wheel_perimeter = (uint16_t)(ui8_oem_wheel_diameter * 80U);
 			}
 #endif
+			
+			// revert offroad speed limit to street after prolonged standstill
+			check_standstill_offroad_revert();
 			
 			// set speed limit in street, offroad, walk assist, startup assist, throttle 6km/h mode
 			if (m_configuration_variables.ui8_riding_mode == WALK_ASSIST_MODE) {
@@ -3805,7 +3832,6 @@ static void uart_send_package(void)
 			// wheel speed
 
 			if (ui16_oem_wheel_speed_time > 0U) {
-#if ENABLE_WHEEL_MAX_SPEED_FROM_DISPLAY
 #if defined SCALE_WHEEL_SPEED_TIME_IN_OFFROAD_MODE
 				// scale wheel speed in offroad mode so that the offroad limit from display
 				// (ui8_wheel_speed_max_array[OFFROAD_MODE] or ui8_max_offroad_speed_from_display)
@@ -3815,9 +3841,11 @@ static void uart_send_package(void)
 				if ((m_configuration_variables.ui8_street_mode_enabled == OFFROAD_MODE)
 					&& (ui8_speed_limit_in_offroad_mode == OFFROAD_MODE) 
 				    && (STREET_MODE_SPEED_LIMIT != ui8_max_offroad_speed_from_display)) {
-
+#if ENABLE_WHEEL_MAX_SPEED_FROM_DISPLAY
 					uint8_t ui8_offroad_limit = ui8_max_offroad_speed_from_display;
-
+#else
+					uint8_t ui8_offroad_limit = WHEEL_MAX_SPEED;
+#endif
 					// guard against zero or very small limits to avoid division by zero/overflow
 					if (ui8_offroad_limit > 0U) {
 						// use 32-bit arithmetic for intermediate result to avoid overflow
@@ -3833,8 +3861,7 @@ static void uart_send_package(void)
 						}
 					}
 				}
-#endif
-#endif
+#endif // SCALE_WHEEL_SPEED_TIME_IN_OFFROAD_MODE
 
 #if ALTERNATIVE_MILES
 				// in VLCD6 display the km/miles conversion is not present.

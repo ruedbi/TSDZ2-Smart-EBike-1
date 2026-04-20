@@ -11,7 +11,7 @@ else
 	echo "Release build"
 fi
 
-version="v295_${MODE}_gestures_v2"
+version="v297_${MODE}_gestures_only_26inch"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
