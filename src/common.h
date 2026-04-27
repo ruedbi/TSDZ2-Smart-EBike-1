@@ -10,6 +10,8 @@
 #ifndef COMMON_COMMON_H_
 #define COMMON_COMMON_H_
 
+#include "config.h"
+
 #include <stdint.h>
 
 // riding modes
@@ -49,9 +51,11 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 
 // activate with my own limits:
 // #define LIMIT_CURRENTS
+#if defined (LIMIT_CURRENTS)
 #define BATTERY_CURRENT_SOFT_LIMIT 16 // Amps
 #define BATTERY_CURRENT_HARD_LIMIT 22 // Amps, must exceed soft limit by some margin
 #define PHASE_CURRENT_LIMIT 20 // Amps; OSF default: 30A
+#endif // LIMIT_CURRENTS
 
 
 // Speed-dependent motor phase current limit (see ebike_app.c)
