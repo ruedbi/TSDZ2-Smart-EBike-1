@@ -1022,6 +1022,8 @@ void TIM1_CAP_COM_IRQHandler(void) __interrupt(TIM1_CAP_COM_IRQHANDLER)
 		// wait until end of programming (write or erase operation) flag is set
 		while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {}
 
+		EEPROM_write_consumed_wh_x10(get_consumed_wh_x10());
+
 		// lock memory
 		FLASH_Lock(FLASH_MEMTYPE_DATA);
 			

@@ -354,6 +354,7 @@ static void calc_oem_wheel_speed(void);
 static void apply_torque_sensor_calibration(void);
 
 // battery soc percentage x10 calculation
+static void set_consumed_wh_offset_x10(uint32_t offset_x10);
 static void calc_watt_hours_used(void);
 static void check_battery_soc(void);
 uint16_t read_battery_soc(void);
@@ -443,10 +444,16 @@ void ebike_app_init(void)
 	// percentage remaining battery capacity x10 at power on
 	ui16_battery_SOC_percentage_x10 = ((uint16_t) m_configuration_variables.ui8_battery_SOC_percentage_8b) << 2;
 		 
-	// battery SOC checked at power on
-	if (ui16_battery_SOC_percentage_x10 > 0U) {
-		// calculate watt-hours x10 at power on
-		ui32_wh_offset_x10 = ((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100;
+	// consumed watt-hours x10 at power on from EEPROM, or SOC fallback when EEPROM is empty
+	{
+		uint32_t ui32_eeprom_wh_x10 = EEPROM_read_consumed_wh_x10();
+
+		if ((ui32_eeprom_wh_x10 == 0U) && (ui16_battery_SOC_percentage_x10 < 1000U)) {
+			ui32_wh_offset_x10 = ((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100;
+		}
+		else {
+			ui32_wh_offset_x10 = ui32_eeprom_wh_x10;
+		}
 	}
 
 	// make startup boost array
@@ -3040,9 +3047,7 @@ static void uart_receive_package(void)
 					ui8_battery_SOC_reset_flag = 1;
 					// restart startup counter
 					ui8_startup_counter = 0;
-				}	
-				// calculate watt-hours x10
-				ui32_wh_offset_x10 = ((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100;
+				}
 				// for display soc %
 				ui8_display_data_on_startup = 1; // SOC%
 				ui8_display_data_enabled = 1;
@@ -3998,6 +4003,21 @@ static void calc_oem_wheel_speed(void)
 } 
 
 
+static void set_consumed_wh_offset_x10(uint32_t offset_x10)
+{
+	ui32_wh_offset_x10 = offset_x10;
+	ui32_wh_sum_x10 = 0;
+	ui32_wh_since_power_on_x10 = 0;
+	EEPROM_write_consumed_wh_x10(offset_x10);
+}
+
+
+uint32_t get_consumed_wh_x10(void)
+{
+	return ui32_wh_offset_x10 + ui32_wh_since_power_on_x10;
+}
+
+
 static void calc_watt_hours_used(void)
 {
 	// battery power x 10
@@ -4082,7 +4102,7 @@ static void check_battery_soc(void)
 					// if the battery is fully charged
 					if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
 						ui16_battery_SOC_percentage_x10 = 1000;
-						ui32_wh_offset_x10 = 0;
+						set_consumed_wh_offset_x10(0);
 						ui8_battery_SOC_reset_flag = 1;
 					}
 					// if SOC calculation is set to auto
@@ -4094,7 +4114,7 @@ static void check_battery_soc(void)
 							// reset soc percentage
 							ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
 							// calculate watt-hours x10
-							ui32_wh_offset_x10 = ((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100;
+							set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
 						}
 						ui8_battery_SOC_reset_flag = 1;
 					}

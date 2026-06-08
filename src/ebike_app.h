@@ -59,4 +59,6 @@ struct_configuration_variables* get_configuration_variables(void);
 
 void ebike_app_init(void);
 
+uint32_t get_consumed_wh_x10(void);
+
 #endif /* EBIKE_APP_H_ */

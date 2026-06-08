@@ -11,11 +11,11 @@ else
 	echo "Release build"
 fi
 
-version="v297_${MODE}_gestures_only_26inch"
+version="v299_${MODE}_lm35_phaselimit130_200_26inch_persistent_Wh"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
-release_folder=/mnt/c/Users/Rüdiger/Meine\ Ablage/DriveSyncFiles/ebike
+release_folder=/mnt/c/Users/ruedi/Meine\ Ablage/DriveSyncFiles/ebike
 release_folder2=$(pwd)/releases
 backup_folder=$(pwd)/releases/backup
 

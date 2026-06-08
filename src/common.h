@@ -62,8 +62,8 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define PHASE_CURRENT_SPEED_LIMIT_ENABLED 1
 #if PHASE_CURRENT_SPEED_LIMIT_ENABLED
 // Wheel speed km/h * 10 (same units as ui16_wheel_speed_x10)
-#define PHASE_CURRENT_SPEED_LOW_X10 80
-#define PHASE_CURRENT_SPEED_MEDIUM_X10 150
+#define PHASE_CURRENT_SPEED_LOW_X10 130
+#define PHASE_CURRENT_SPEED_MEDIUM_X10 200
 // Phase current ADC limit above speed medium; ~0.16 A per step = 16A
 #define ADC_10_BIT_MOTOR_PHASE_CURRENT_PROTECT 100
 #endif // PHASE_CURRENT_SPEED_LIMIT_ENABLED

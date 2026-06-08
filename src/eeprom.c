@@ -245,3 +245,40 @@ void EEPROM_controller(uint8_t ui8_operation, uint8_t ui8_byte_init)
   // lock memory
   FLASH_Lock(FLASH_MEMTYPE_DATA);
 }
+
+
+uint32_t EEPROM_read_consumed_wh_x10(void)
+{
+  uint32_t ui32_value;
+
+  ui32_value = (uint32_t) FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_0);
+  ui32_value |= (uint32_t) FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_1) << 8;
+  ui32_value |= (uint32_t) FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_2) << 16;
+  ui32_value |= (uint32_t) FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_3) << 24;
+
+  if (ui32_value == 0xFFFFFFFFUL) {
+    return 0;
+  }
+
+  return ui32_value;
+}
+
+
+void EEPROM_write_consumed_wh_x10(uint32_t ui32_value)
+{
+  uint8_t ui8_i;
+  uint32_t ui32_address;
+
+  FLASH_Unlock(FLASH_MEMTYPE_DATA);
+
+  while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {}
+
+  for (ui8_i = 0; ui8_i < 4; ui8_i++)
+  {
+    ui32_address = (uint32_t) ADDRESS_CONSUMED_WH_X10_0 + ui8_i;
+    FLASH_ProgramByte(ui32_address, (uint8_t) (ui32_value >> (ui8_i * 8)));
+    while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {}
+  }
+
+  FLASH_Lock(FLASH_MEMTYPE_DATA);
+}
