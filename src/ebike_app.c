@@ -4113,8 +4113,9 @@ static void check_battery_soc(void)
 						  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
 							// reset soc percentage
 							ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
-							// calculate watt-hours x10
-							set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+							// do not update the consumed Wh offset with a calculated value, as BATTERY_SOC_PERCENT_THRESHOLD_X10 seems to be 
+							// too small and will trigger also on power cycle:
+							// set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
 						}
 						ui8_battery_SOC_reset_flag = 1;
 					}
