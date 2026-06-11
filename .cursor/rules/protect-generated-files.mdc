@@ -1,0 +1,10 @@
+---
+description: Protect generated files from modification
+alwaysApply: true
+---
+
+# Do Not Modify Generated Files
+
+`src/config.h` is a generated file and must **never** be modified directly.
+
+If a change to configuration values is needed, identify and modify the source that generates `config.h` instead.

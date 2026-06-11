@@ -1,0 +1,37 @@
+---
+description: Enforce descriptive names and meaningful comments when adding new code
+alwaysApply: true
+---
+
+# Descriptive Naming and Comments
+
+## Naming
+
+- Use full, descriptive names for functions, variables, parameters, types, and constants — no cryptic abbreviations.
+- Names should clearly express **what** the entity represents or does.
+
+```c
+// ❌ BAD
+int calc(int v, int t);
+uint8_t tmp;
+
+// ✅ GOOD
+int calculateAverageSpeed(int velocity, int timeSeconds);
+uint8_t currentAssistLevel;
+```
+
+## Comments
+
+- Add a comment to every function, struct, enum, and non-trivial variable explaining **what** it does or represents.
+- For function bodies, add inline comments for each logical step or non-obvious operation.
+- Comments must add information beyond what the code already expresses — do not just restate the code.
+
+```c
+// ❌ BAD — restates the code, adds nothing
+i++; // increment i
+
+// ✅ GOOD — explains intent
+remainingRetries--; // one attempt consumed; abort if zero reached
+```
+
+- Use `///` Doxygen style for all public APIs and module-level declarations.

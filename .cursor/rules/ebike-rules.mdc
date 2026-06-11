@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+
+- when a new software gets flashed to the motor controller, also the eeprom gets erased with values of 0 (not 0xFF); so 0 shall be interpreted as a default / safe value for the related functionality
+
+- do not format unmodified code
+- format new code according to the style of the other code in the same file
+
+- when creating a "plan", give it a prefix that reflects the AI model used
+

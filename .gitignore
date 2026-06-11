@@ -20,3 +20,5 @@ tests/sim/*
 JavaConfigurator.jar
 src/config.h
 experimental settings/
+!.cursor
+.cursor/rules/codeguard*.mdc
