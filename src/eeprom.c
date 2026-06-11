@@ -300,5 +300,53 @@ uint32_t EEPROM_read_consumed_wh_x10(void) {
     
         return ui32_value;
 }
+
+/// Programs the 2 battery-voltage-at-shutdown bytes, assuming the data EEPROM is
+/// already unlocked. Shared by the locked and unlocked public entry points so the
+/// byte-programming logic exists in only one place.
+static void EEPROM_program_battery_voltage_at_shutdown_x10(uint16_t ui16_value) {
+    uint8_t ui8_i;
+    uint32_t ui32_address;
+
+    // store the 16-bit value little-endian across 2 consecutive EEPROM bytes
+    for (ui8_i = 0; ui8_i < 2; ui8_i++) {
+        ui32_address = (uint32_t)ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0 + ui8_i;
+        FLASH_ProgramByte(ui32_address, (uint8_t)(ui16_value >> (ui8_i * 8)));
+        // wait until end of programming flag is set before writing the next byte
+        while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {
+        }
+    }
+}
+
+void EEPROM_write_battery_voltage_at_shutdown_x10(uint16_t ui16_value) {
+    // standalone caller: data EEPROM is locked, so unlock it here first
+    FLASH_Unlock(FLASH_MEMTYPE_DATA);
+
+    // wait until data EEPROM area unlocked flag is set
+    while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {
+    }
+
+    EEPROM_program_battery_voltage_at_shutdown_x10(ui16_value);
+
+    // lock memory
+    FLASH_Lock(FLASH_MEMTYPE_DATA);
+}
+
+void EEPROM_write_battery_voltage_at_shutdown_x10_unlocked(uint16_t ui16_value) {
+    // caller (e.g. the shutdown handler) has already unlocked the data EEPROM; re-running
+    // FLASH_Unlock here would re-write the MASS keys and re-lock it, dropping the writes.
+    EEPROM_program_battery_voltage_at_shutdown_x10(ui16_value);
+}
+
+uint16_t EEPROM_read_battery_voltage_at_shutdown_x10(void) {
+    uint16_t ui16_value;
+
+    ui16_value = (uint16_t)FLASH_ReadByte(ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0);
+    ui16_value |= (uint16_t)FLASH_ReadByte(ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1) << 8;
+
+    // A blank STM8 data EEPROM reads 0x00, so 0 is the intended "uninitialized" sentinel.
+    // Return the raw value: unlike consumed-Wh there is no 0xFFFF -> 0 conversion here.
+    return ui16_value;
+}
     
     

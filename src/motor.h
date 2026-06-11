@@ -12,8 +12,8 @@
 #include <stdint.h>
 
 // motor states
-#define BLOCK_COMMUTATION 			            0
-#define SINEWAVE_INTERPOLATION_60_DEGREES 	    0x80
+#define BLOCK_COMMUTATION 0
+#define SINEWAVE_INTERPOLATION_60_DEGREES 0x80
 
 // power variables
 extern volatile uint8_t ui8_controller_duty_cycle_ramp_up_inverse_step;
@@ -45,8 +45,11 @@ extern volatile uint16_t ui16_wheel_speed_sensor_ticks;
 // battery soc
 extern volatile uint8_t ui8_battery_SOC_saved_flag;
 extern volatile uint8_t ui8_battery_SOC_reset_flag;
+// most recent unloaded, calibrated+filtered pack voltage (x10 V), mirrored from
+// check_battery_soc() so the shutdown handler can persist it at power-off
+extern volatile uint16_t ui16_battery_voltage_filtered_x10_for_shutdown_save;
 
-void hall_sensor_init(void); // must be called before using the motor
+void hall_sensor_init(void);  // must be called before using the motor
 void motor_enable_pwm(void);
 void motor_disable_pwm(void);
 

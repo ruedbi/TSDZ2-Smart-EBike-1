@@ -38,8 +38,11 @@
  #define ADDRESS_CONSUMED_WH_X10_0						EEPROM_BASE_ADDRESS + 20
  #define ADDRESS_CONSUMED_WH_X10_1						EEPROM_BASE_ADDRESS + 21
  #define ADDRESS_CONSUMED_WH_X10_2						EEPROM_BASE_ADDRESS + 22
- #define ADDRESS_CONSUMED_WH_X10_3						EEPROM_BASE_ADDRESS + 23
- #define EEPROM_BYTES_STORED                             20
+#define ADDRESS_CONSUMED_WH_X10_3						EEPROM_BASE_ADDRESS + 23
+// unloaded battery voltage (x10 V) stored at the last regular power-off, 16-bit little-endian
+#define ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0		EEPROM_BASE_ADDRESS + 24
+#define ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1		EEPROM_BASE_ADDRESS + 25
+#define EEPROM_BYTES_STORED                             20
  #define EEPROM_BYTES_STORED_OEM_DISPLAY					13
  #define EEPROM_BYTES_INIT_OEM_DISPLAY					EEPROM_BYTES_STORED - EEPROM_BYTES_STORED_OEM_DISPLAY
  
@@ -60,5 +63,15 @@ void EEPROM_write_consumed_wh_x10(uint32_t ui32_value);
 /// Writes the consumed watt-hours x10 value assuming the data EEPROM is already
 /// unlocked by the caller (used from the shutdown handler that already holds the lock open).
 void EEPROM_write_consumed_wh_x10_unlocked(uint32_t ui32_value);
+
+/// Reads the unloaded battery voltage (x10 V) stored at the last regular power-off.
+/// Returns the raw stored value; a blank STM8 data EEPROM reads 0x00, so 0 means
+/// "uninitialized" and the caller treats it as "accept the next full battery once".
+uint16_t EEPROM_read_battery_voltage_at_shutdown_x10(void);
+/// Writes the unloaded battery voltage (x10 V) at power-off; unlocks and re-locks the data EEPROM.
+void EEPROM_write_battery_voltage_at_shutdown_x10(uint16_t ui16_value);
+/// Writes the unloaded battery voltage (x10 V) assuming the data EEPROM is already
+/// unlocked by the caller (used from the shutdown handler that already holds the lock open).
+void EEPROM_write_battery_voltage_at_shutdown_x10_unlocked(uint16_t ui16_value);
 
 #endif /* EEPROM_H_ */

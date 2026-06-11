@@ -86,6 +86,9 @@ static uint8_t ui8_walk_assist_level = 0;
 
 // battery
 static uint16_t ui16_battery_voltage_calibrated_and_filtered_x10 = 0;
+// unloaded pack voltage (x10 V) recorded at the last regular power-off, loaded from EEPROM
+// at startup; the charge/battery-change detector compares the current startup voltage to it
+static uint16_t ui16_battery_voltage_at_last_shutdown_x10 = 0;
 static uint16_t ui16_battery_power_x10 = 0;															  
 static uint16_t ui16_battery_power_filtered_x10 = 0;
 static uint16_t ui16_actual_battery_capacity = (uint16_t)(((uint32_t) TARGET_MAX_BATTERY_CAPACITY * ACTUAL_BATTERY_CAPACITY_PERCENT) / 100);
@@ -372,6 +375,7 @@ static void set_consumed_wh_offset_x10(uint32_t offset_x10);
 static void calc_watt_hours_used(void);
 static void check_battery_soc(void);
 uint16_t read_battery_soc(void);
+static uint8_t is_battery_change_detected(uint16_t voltage_x10, uint16_t last_shutdown_voltage_x10);
 
 
 void ebike_app_init(void)
@@ -469,6 +473,10 @@ void ebike_app_init(void)
 			ui32_wh_offset_x10 = ui32_eeprom_wh_x10;
 		}
 	}
+
+	// unloaded pack voltage recorded at the last regular power-off; used at startup to detect
+	// whether the battery was charged or swapped while the system was off (0 when EEPROM blank)
+	ui16_battery_voltage_at_last_shutdown_x10 = EEPROM_read_battery_voltage_at_shutdown_x10();
 
 	// make startup boost array
 	ui16_startup_boost_factor_array[0] = STARTUP_BOOST_TORQUE_FACTOR;
@@ -4046,6 +4054,30 @@ static void calc_watt_hours_used(void)
 }
 
 
+/// Decides whether a battery-change / charge event should reset the SOC accounting.
+///
+/// Both arguments are unloaded, calibrated+filtered pack voltages (x10 V): \p voltage_x10 is
+/// the value measured at this startup, \p last_shutdown_voltage_x10 is the value persisted at
+/// the last regular power-off. A genuine recharge (or a swap to a fuller pack) is the only thing
+/// that can raise the resting voltage while the system is off, so a sufficient rise is accepted
+/// as a change event. A short ride leaves the voltage essentially unchanged and is rejected,
+/// which fixes the repeated false resets of the old fixed-threshold logic.
+///
+/// \return non-zero when a reset should be allowed, zero otherwise.
+static uint8_t is_battery_change_detected(uint16_t voltage_x10, uint16_t last_shutdown_voltage_x10)
+{
+	// blank/uninitialized EEPROM (0x00 on STM8) -> accept once so a full battery still resets SOC
+	if (last_shutdown_voltage_x10 == 0) {
+		return 1;
+	}
+	// voltage rose by at least the hysteresis margin since the last power-off -> battery charged/swapped
+	if (voltage_x10 >= (uint16_t)(last_shutdown_voltage_x10 + BATTERY_SOC_RESET_RISE_HYSTERESIS_X10)) {
+		return 1;
+	}
+	return 0;
+}
+
+
 static void check_battery_soc(void)
 {
 	uint16_t ui16_battery_SOC_used_x10;
@@ -4067,6 +4099,10 @@ static void check_battery_soc(void)
 	
 	// battery voltage calibrated and filtered x10
 	ui16_battery_voltage_calibrated_and_filtered_x10 = filter(ui16_battery_voltage_calibrated_x10, ui16_battery_voltage_calibrated_and_filtered_x10, 4);
+	
+	// mirror the latest filtered voltage into the shared variable so the shutdown handler in
+	// motor.c can persist it (the source variable above is static to this translation unit)
+	ui16_battery_voltage_filtered_x10_for_shutdown_save = ui16_battery_voltage_calibrated_and_filtered_x10;
 	
 #if ENABLE_VLCD6 || ENABLE_XH18
 	if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_OVERVOLTAGE_X10) { ui8_battery_state_of_charge = 7; }		// overvoltage
@@ -4113,29 +4149,31 @@ static void check_battery_soc(void)
 			// waiting for voltage filter
 			if (ui8_startup_counter >= (DELAY_MENU_ON >> 1)) {
 				if (!ui8_battery_SOC_reset_flag) {
-					// if the battery is fully charged
-					if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
-						ui16_battery_SOC_percentage_x10 = 1000;
-						set_consumed_wh_offset_x10(0);
-						ui8_battery_SOC_reset_flag = 1;
-					}
-					// if SOC calculation is set to auto
-					else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
-						ui16_actual_battery_SOC_x10 = read_battery_soc();
-						// check soc percentage
-						if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
-						  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
-							// reset soc percentage
-							ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
-							// do not update the consumed Wh offset with a calculated value, as BATTERY_SOC_PERCENT_THRESHOLD_X10 seems to be 
-							// too small and will trigger also on power cycle:
-							// set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+					// Only accept a reset when the unloaded voltage has risen since the last
+					// power-off (battery charged or swapped to a fuller pack). This hysteresis
+					// gate prevents a short ride - which leaves the pack above the full
+					// threshold - from re-resetting SOC and zeroing consumed Wh every power cycle.
+					if (is_battery_change_detected(ui16_battery_voltage_calibrated_and_filtered_x10,
+												   ui16_battery_voltage_at_last_shutdown_x10)) {
+						// if the battery is fully charged
+						if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
+							ui16_battery_SOC_percentage_x10 = 1000;
+							set_consumed_wh_offset_x10(0);
 						}
-						ui8_battery_SOC_reset_flag = 1;
+						// if SOC calculation is set to auto: a non-full but charged/swapped pack
+						else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
+							ui16_actual_battery_SOC_x10 = read_battery_soc();
+							// check soc percentage
+							if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
+							  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
+								// sync soc percentage to the voltage-derived value; do not zero the
+								// consumed Wh offset here as the pack is not known to be full
+								ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
+							}
+						}
 					}
-					else {
-						ui8_battery_SOC_reset_flag = 1;
-					}
+					// run the detection only once per power-on regardless of the outcome
+					ui8_battery_SOC_reset_flag = 1;
 				}
 			}
 		}
