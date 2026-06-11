@@ -95,6 +95,9 @@ volatile uint32_t ui32_wh_offset_x10 = 0;
 static uint32_t ui32_wh_since_power_on_x10 = 0;
 volatile uint16_t ui16_battery_SOC_percentage_x10 = 0;
 static uint8_t ui8_battery_state_of_charge = 0;
+static uint16_t ui16_last_battery_reset_voltage_x10 = 0;
+static uint16_t ui16_last_battery_power_off_voltage_x10 = 0;
+static uint8_t ui8_battery_power_off_voltage_saved_flag = 0;
 // table tested with Panasonic NCR18650GA, full cell voltage = 4.15 x num.cells, empty cell voltage = 3.15 x num.cells
 static uint8_t ui8_battery_soc_used[100] = {1,1,1,2,2,2,3,3,3,4,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,12,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,32,33,34,35,37,38,39,40,42,43,44,45,47,48,49,51,52,54,55,57,58,59,61,63,64,66,67,69,70,72,73,74,76,77,78,80,81,83,84,86,87,89,90,92,93,94,95,96,97,98,98,99,99,99,99};
 
@@ -355,6 +358,9 @@ static void apply_torque_sensor_calibration(void);
 
 // battery soc percentage x10 calculation
 static void set_consumed_wh_offset_x10(uint32_t offset_x10);
+static void save_battery_reset_reference_voltage_x10(uint16_t voltage_x10);
+static void save_battery_power_off_voltage_x10(uint16_t voltage_x10);
+uint8_t is_battery_change_detected(uint16_t startup_voltage_x10, uint16_t last_reset_voltage_x10, uint16_t last_power_off_voltage_x10);
 static void calc_watt_hours_used(void);
 static void check_battery_soc(void);
 uint16_t read_battery_soc(void);
@@ -455,6 +461,8 @@ void ebike_app_init(void)
 			ui32_wh_offset_x10 = ui32_eeprom_wh_x10;
 		}
 	}
+	ui16_last_battery_reset_voltage_x10 = EEPROM_read_battery_reset_voltage_x10();
+	ui16_last_battery_power_off_voltage_x10 = EEPROM_read_battery_power_off_voltage_x10();
 
 	// make startup boost array
 	ui16_startup_boost_factor_array[0] = STARTUP_BOOST_TORQUE_FACTOR;
@@ -2606,6 +2614,7 @@ static void uart_receive_package(void)
 		if (ui8_rx_check_code == ui8_rx_buffer[RX_CHECK_CODE]) {
 			// Reset the safety counter when a valid message from the LCD is received
             ui8_no_rx_counter = 0;
+			ui8_battery_power_off_voltage_saved_flag = 0;
 			
 			// mask lights button from display
 			ui8_lights_button_flag = ui8_rx_buffer[1] & 0x01;
@@ -3043,6 +3052,7 @@ static void uart_receive_package(void)
 			// walk assist button pressed within 5 seconds of power on
 			if ((ui8_walk_assist_button_pressed)&&(!ui8_startup_flag)) {
 				ui16_battery_SOC_percentage_x10 = read_battery_soc();
+				save_battery_reset_reference_voltage_x10(ui16_battery_voltage_calibrated_and_filtered_x10);
 				if (!ui8_battery_SOC_reset_flag) {
 					ui8_battery_SOC_reset_flag = 1;
 					// restart startup counter
@@ -3353,12 +3363,17 @@ static void uart_receive_package(void)
 		// signal that we processed the full package
 		ui8_received_package_flag = 0;
 		
-		// assist level = OFF if connection with the LCD is lost for more than 0,3 sec (safety)
-		if (ui8_no_rx_counter > 3) {
-			ui8_assist_level = OFF;
-		}
 		// enable UART2 receive interrupt as we are now ready to receive a new package
 		UART2->CR2 |= (1 << 5);
+	}
+
+	// assist level = OFF if connection with the LCD is lost for more than 0,3 sec (safety)
+	if (ui8_no_rx_counter > 3) {
+		if ((ui8_display_ready_flag)&&(!ui8_battery_power_off_voltage_saved_flag)) {
+			save_battery_power_off_voltage_x10(ui16_battery_voltage_calibrated_and_filtered_x10);
+			ui8_battery_power_off_voltage_saved_flag = 1;
+		}
+		ui8_assist_level = OFF;
 	}
 }
 
@@ -4012,6 +4027,48 @@ static void set_consumed_wh_offset_x10(uint32_t offset_x10)
 }
 
 
+static void save_battery_reset_reference_voltage_x10(uint16_t voltage_x10)
+{
+	ui16_last_battery_reset_voltage_x10 = voltage_x10;
+	EEPROM_write_battery_reset_voltage_x10(voltage_x10);
+}
+
+
+static void save_battery_power_off_voltage_x10(uint16_t voltage_x10)
+{
+	ui16_last_battery_power_off_voltage_x10 = voltage_x10;
+	EEPROM_write_battery_power_off_voltage_x10(voltage_x10);
+}
+
+
+uint8_t is_battery_change_detected(uint16_t startup_voltage_x10, uint16_t last_reset_voltage_x10, uint16_t last_power_off_voltage_x10)
+{
+	uint16_t discharge_rearm_voltage_x10;
+	uint16_t charge_rise_voltage_x10;
+
+	if ((last_reset_voltage_x10 == 0U) || (last_power_off_voltage_x10 == 0U)) {
+		return 1U;
+	}
+
+	charge_rise_voltage_x10 = last_reset_voltage_x10 + BATTERY_CHANGE_CHARGE_RISE_X10;
+	if (startup_voltage_x10 >= charge_rise_voltage_x10) {
+		return 1U;
+	}
+
+	if (last_reset_voltage_x10 <= BATTERY_CHANGE_DISCHARGE_DROP_X10) {
+		return 0U;
+	}
+
+	discharge_rearm_voltage_x10 = last_reset_voltage_x10 - BATTERY_CHANGE_DISCHARGE_DROP_X10;
+	if ((last_power_off_voltage_x10 <= discharge_rearm_voltage_x10)
+	  && (startup_voltage_x10 >= BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10)) {
+		return 1U;
+	}
+
+	return 0U;
+}
+
+
 uint32_t get_consumed_wh_x10(void)
 {
 	return ui32_wh_offset_x10 + ui32_wh_since_power_on_x10;
@@ -4053,6 +4110,7 @@ static void check_battery_soc(void)
 	
 	// battery voltage calibrated and filtered x10
 	ui16_battery_voltage_calibrated_and_filtered_x10 = filter(ui16_battery_voltage_calibrated_x10, ui16_battery_voltage_calibrated_and_filtered_x10, 4);
+	ui16_battery_voltage_calibrated_and_filtered_for_shutdown_x10 = ui16_battery_voltage_calibrated_and_filtered_x10;
 	
 #if ENABLE_VLCD6 || ENABLE_XH18
 	if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_OVERVOLTAGE_X10) { ui8_battery_state_of_charge = 7; }		// overvoltage
@@ -4099,23 +4157,28 @@ static void check_battery_soc(void)
 			// waiting for voltage filter
 			if (ui8_startup_counter >= (DELAY_MENU_ON >> 1)) {
 				if (!ui8_battery_SOC_reset_flag) {
-					// if the battery is fully charged
-					if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
-						ui16_battery_SOC_percentage_x10 = 1000;
-						set_consumed_wh_offset_x10(0);
-						ui8_battery_SOC_reset_flag = 1;
-					}
-					// if SOC calculation is set to auto
-					else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
-						ui16_actual_battery_SOC_x10 = read_battery_soc();
-						// check soc percentage
-						if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
-						  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
-							// reset soc percentage
-							ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
-							// do not update the consumed Wh offset with a calculated value, as BATTERY_SOC_PERCENT_THRESHOLD_X10 seems to be 
-							// too small and will trigger also on power cycle:
-							// set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+					if (is_battery_change_detected(ui16_battery_voltage_calibrated_and_filtered_x10,
+					  ui16_last_battery_reset_voltage_x10,
+					  ui16_last_battery_power_off_voltage_x10)) {
+						// if the battery is fully charged
+						if (ui16_battery_voltage_calibrated_and_filtered_x10 >= BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
+							ui16_battery_SOC_percentage_x10 = 1000;
+							set_consumed_wh_offset_x10(0);
+							save_battery_reset_reference_voltage_x10(ui16_battery_voltage_calibrated_and_filtered_x10);
+						}
+						// if SOC calculation is set to auto
+						else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
+							ui16_actual_battery_SOC_x10 = read_battery_soc();
+							// check soc percentage
+							if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
+							  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
+								// reset soc percentage
+								ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
+								save_battery_reset_reference_voltage_x10(ui16_battery_voltage_calibrated_and_filtered_x10);
+								// do not update the consumed Wh offset with a calculated value, as BATTERY_SOC_PERCENT_THRESHOLD_X10 seems to be
+								// too small and will trigger also on power cycle:
+								// set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+							}
 						}
 						ui8_battery_SOC_reset_flag = 1;
 					}

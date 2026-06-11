@@ -39,6 +39,10 @@
  #define ADDRESS_CONSUMED_WH_X10_1						EEPROM_BASE_ADDRESS + 21
  #define ADDRESS_CONSUMED_WH_X10_2						EEPROM_BASE_ADDRESS + 22
  #define ADDRESS_CONSUMED_WH_X10_3						EEPROM_BASE_ADDRESS + 23
+#define ADDRESS_BATTERY_RESET_VOLTAGE_X10_0			EEPROM_BASE_ADDRESS + 24
+#define ADDRESS_BATTERY_RESET_VOLTAGE_X10_1			EEPROM_BASE_ADDRESS + 25
+#define ADDRESS_BATTERY_POWER_OFF_VOLTAGE_X10_0		EEPROM_BASE_ADDRESS + 26
+#define ADDRESS_BATTERY_POWER_OFF_VOLTAGE_X10_1		EEPROM_BASE_ADDRESS + 27
  #define EEPROM_BYTES_STORED                             20
  #define EEPROM_BYTES_STORED_OEM_DISPLAY					13
  #define EEPROM_BYTES_INIT_OEM_DISPLAY					EEPROM_BYTES_STORED - EEPROM_BYTES_STORED_OEM_DISPLAY
@@ -60,5 +64,13 @@ void EEPROM_write_consumed_wh_x10(uint32_t ui32_value);
 /// Writes the consumed watt-hours x10 value assuming the data EEPROM is already
 /// unlocked by the caller (used from the shutdown handler that already holds the lock open).
 void EEPROM_write_consumed_wh_x10_unlocked(uint32_t ui32_value);
+uint16_t EEPROM_read_battery_reset_voltage_x10(void);
+/// Writes the voltage captured at the last accepted battery reset event.
+void EEPROM_write_battery_reset_voltage_x10(uint16_t ui16_value);
+uint16_t EEPROM_read_battery_power_off_voltage_x10(void);
+/// Writes the voltage captured when the controller saves session-end state.
+void EEPROM_write_battery_power_off_voltage_x10(uint16_t ui16_value);
+/// Writes the session-end voltage assuming the data EEPROM is already unlocked.
+void EEPROM_write_battery_power_off_voltage_x10_unlocked(uint16_t ui16_value);
 
 #endif /* EEPROM_H_ */

@@ -104,6 +104,7 @@
  // battery soc
  volatile uint8_t ui8_battery_SOC_saved_flag = 0;
  volatile uint8_t ui8_battery_SOC_reset_flag = 0;
+volatile uint16_t ui16_battery_voltage_calibrated_and_filtered_for_shutdown_x10 = 0;
  
  // Measures did with a 24V Q85 328 RPM motor, rotating motor backwards by hand:
  // Hall sensor A positivie to negative transition | BEMF phase B at max value / top of sinewave
@@ -1026,6 +1027,7 @@
          // EEPROM is already unlocked above; use the unlocked variant so the
          // MASS keys are not re-written (which would re-lock and drop the writes)
          EEPROM_write_consumed_wh_x10_unlocked(get_consumed_wh_x10());
+        EEPROM_write_battery_power_off_voltage_x10_unlocked(ui16_battery_voltage_calibrated_and_filtered_for_shutdown_x10);
  
          // lock memory
          FLASH_Lock(FLASH_MEMTYPE_DATA);
