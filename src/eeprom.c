@@ -300,5 +300,59 @@ uint32_t EEPROM_read_consumed_wh_x10(void) {
     
         return ui32_value;
 }
-    
+
+/// Programs one little-endian uint16 value into two consecutive data-EEPROM bytes.
+static void EEPROM_program_ui16_x10(uint32_t ui32_address_low_byte, uint16_t ui16_value)
+{
+	FLASH_ProgramByte(ui32_address_low_byte, (uint8_t)(ui16_value & 0xFFU));
+	while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {
+	}
+	FLASH_ProgramByte(ui32_address_low_byte + 1U, (uint8_t)(ui16_value >> 8));
+	while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {
+	}
+}
+
+/// Reads one little-endian uint16 from two consecutive data-EEPROM bytes (raw; 0 when blank).
+static uint16_t EEPROM_read_ui16_x10(uint32_t ui32_address_low_byte)
+{
+	uint16_t ui16_value;
+
+	ui16_value = (uint16_t)FLASH_ReadByte(ui32_address_low_byte);
+	ui16_value |= (uint16_t)((uint16_t)FLASH_ReadByte(ui32_address_low_byte + 1U) << 8);
+	return ui16_value;
+}
+
+uint16_t EEPROM_read_battery_change_reference_x10(void)
+{
+	return EEPROM_read_ui16_x10(ADDRESS_BATTERY_CHANGE_REFERENCE_X10_0);
+}
+
+void EEPROM_write_battery_change_reference_x10(uint16_t ui16_value)
+{
+	FLASH_Unlock(FLASH_MEMTYPE_DATA);
+	while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {
+	}
+	EEPROM_program_ui16_x10(ADDRESS_BATTERY_CHANGE_REFERENCE_X10_0, ui16_value);
+	FLASH_Lock(FLASH_MEMTYPE_DATA);
+}
+
+uint16_t EEPROM_read_battery_last_shutdown_voltage_x10(void)
+{
+	return EEPROM_read_ui16_x10(ADDRESS_BATTERY_LAST_SHUTDOWN_VOLTAGE_X10_0);
+}
+
+void EEPROM_write_battery_last_shutdown_voltage_x10(uint16_t ui16_value)
+{
+	FLASH_Unlock(FLASH_MEMTYPE_DATA);
+	while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {
+	}
+	EEPROM_program_ui16_x10(ADDRESS_BATTERY_LAST_SHUTDOWN_VOLTAGE_X10_0, ui16_value);
+	FLASH_Lock(FLASH_MEMTYPE_DATA);
+}
+
+void EEPROM_write_battery_last_shutdown_voltage_x10_unlocked(uint16_t ui16_value)
+{
+	EEPROM_program_ui16_x10(ADDRESS_BATTERY_LAST_SHUTDOWN_VOLTAGE_X10_0, ui16_value);
+}
+
     

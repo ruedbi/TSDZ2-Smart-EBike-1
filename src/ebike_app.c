@@ -86,6 +86,9 @@ static uint8_t ui8_walk_assist_level = 0;
 
 // battery
 static uint16_t ui16_battery_voltage_calibrated_and_filtered_x10 = 0;
+static uint16_t ui16_battery_change_reference_voltage_x10 = 0;
+static uint16_t ui16_battery_last_shutdown_voltage_x10 = 0;
+static uint8_t ui8_last_shutdown_voltage_saved_flag = 0;
 static uint16_t ui16_battery_power_x10 = 0;															  
 static uint16_t ui16_battery_power_filtered_x10 = 0;
 static uint16_t ui16_actual_battery_capacity = (uint16_t)(((uint32_t) TARGET_MAX_BATTERY_CAPACITY * ACTUAL_BATTERY_CAPACITY_PERCENT) / 100);
@@ -357,6 +360,11 @@ static void apply_torque_sensor_calibration(void);
 static void set_consumed_wh_offset_x10(uint32_t offset_x10);
 static void calc_watt_hours_used(void);
 static void check_battery_soc(void);
+static uint8_t is_battery_change_detected(uint16_t voltage_now_x10,
+	uint16_t reference_voltage_x10,
+	uint16_t shutdown_voltage_x10);
+static void persist_battery_change_reference_x10(uint16_t voltage_x10);
+static void persist_battery_last_shutdown_voltage_once(void);
 uint16_t read_battery_soc(void);
 
 
@@ -455,6 +463,10 @@ void ebike_app_init(void)
 			ui32_wh_offset_x10 = ui32_eeprom_wh_x10;
 		}
 	}
+
+	// battery-change hysteresis state from EEPROM (blank EEPROM reads as 0)
+	ui16_battery_change_reference_voltage_x10 = EEPROM_read_battery_change_reference_x10();
+	ui16_battery_last_shutdown_voltage_x10 = EEPROM_read_battery_last_shutdown_voltage_x10();
 
 	// make startup boost array
 	ui16_startup_boost_factor_array[0] = STARTUP_BOOST_TORQUE_FACTOR;
@@ -3043,6 +3055,7 @@ static void uart_receive_package(void)
 			// walk assist button pressed within 5 seconds of power on
 			if ((ui8_walk_assist_button_pressed)&&(!ui8_startup_flag)) {
 				ui16_battery_SOC_percentage_x10 = read_battery_soc();
+				persist_battery_change_reference_x10(ui16_battery_voltage_calibrated_and_filtered_x10);
 				if (!ui8_battery_SOC_reset_flag) {
 					ui8_battery_SOC_reset_flag = 1;
 					// restart startup counter
@@ -3356,6 +3369,7 @@ static void uart_receive_package(void)
 		// assist level = OFF if connection with the LCD is lost for more than 0,3 sec (safety)
 		if (ui8_no_rx_counter > 3) {
 			ui8_assist_level = OFF;
+			persist_battery_last_shutdown_voltage_once();
 		}
 		// enable UART2 receive interrupt as we are now ready to receive a new package
 		UART2->CR2 |= (1 << 5);
@@ -4012,6 +4026,46 @@ static void set_consumed_wh_offset_x10(uint32_t offset_x10)
 }
 
 
+/// Returns non-zero when startup may accept a battery-change / charge SOC adjustment.
+static uint8_t is_battery_change_detected(uint16_t voltage_now_x10,
+	uint16_t reference_voltage_x10,
+	uint16_t shutdown_voltage_x10)
+{
+	if (reference_voltage_x10 == 0U) {
+		return 1U;
+	}
+	if (shutdown_voltage_x10 != 0U) {
+		if (voltage_now_x10 >= (uint16_t)(shutdown_voltage_x10 + BATTERY_SOC_RESET_RISE_HYSTERESIS_X10)) {
+			return 1U;
+		}
+		if ((shutdown_voltage_x10 <= (uint16_t)(reference_voltage_x10 - BATTERY_SOC_RESET_DROP_HYSTERESIS_X10))
+		  && (voltage_now_x10 >= BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10)) {
+			return 1U;
+		}
+	}
+	return 0U;
+}
+
+
+/// Stores the voltage captured at the last accepted battery-change / manual SOC reset.
+static void persist_battery_change_reference_x10(uint16_t voltage_x10)
+{
+	ui16_battery_change_reference_voltage_x10 = voltage_x10;
+	EEPROM_write_battery_change_reference_x10(voltage_x10);
+}
+
+
+/// Saves the current filtered pack voltage once when display communication is lost (user power-off).
+static void persist_battery_last_shutdown_voltage_once(void)
+{
+	if (!ui8_last_shutdown_voltage_saved_flag) {
+		ui16_battery_last_shutdown_voltage_x10 = ui16_battery_voltage_calibrated_and_filtered_x10;
+		EEPROM_write_battery_last_shutdown_voltage_x10(ui16_battery_last_shutdown_voltage_x10);
+		ui8_last_shutdown_voltage_saved_flag = 1U;
+	}
+}
+
+
 uint32_t get_consumed_wh_x10(void)
 {
 	return ui32_wh_offset_x10 + ui32_wh_since_power_on_x10;
@@ -4099,29 +4153,25 @@ static void check_battery_soc(void)
 			// waiting for voltage filter
 			if (ui8_startup_counter >= (DELAY_MENU_ON >> 1)) {
 				if (!ui8_battery_SOC_reset_flag) {
-					// if the battery is fully charged
-					if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
-						ui16_battery_SOC_percentage_x10 = 1000;
-						set_consumed_wh_offset_x10(0);
-						ui8_battery_SOC_reset_flag = 1;
-					}
-					// if SOC calculation is set to auto
-					else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
-						ui16_actual_battery_SOC_x10 = read_battery_soc();
-						// check soc percentage
-						if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
-						  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
-							// reset soc percentage
-							ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
-							// do not update the consumed Wh offset with a calculated value, as BATTERY_SOC_PERCENT_THRESHOLD_X10 seems to be 
-							// too small and will trigger also on power cycle:
-							// set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+					if (is_battery_change_detected(ui16_battery_voltage_calibrated_and_filtered_x10,
+						ui16_battery_change_reference_voltage_x10,
+						ui16_battery_last_shutdown_voltage_x10)) {
+						// full-charge reset
+						if (ui16_battery_voltage_calibrated_and_filtered_x10 >= BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
+							ui16_battery_SOC_percentage_x10 = 1000;
+							set_consumed_wh_offset_x10(0);
 						}
-						ui8_battery_SOC_reset_flag = 1;
+						// SOC calculation set to auto: sync only inside hysteresis gate
+						else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
+							ui16_actual_battery_SOC_x10 = read_battery_soc();
+							if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
+							  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
+								ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
+							}
+						}
+						persist_battery_change_reference_x10(ui16_battery_voltage_calibrated_and_filtered_x10);
 					}
-					else {
-						ui8_battery_SOC_reset_flag = 1;
-					}
+					ui8_battery_SOC_reset_flag = 1;
 				}
 			}
 		}
@@ -4133,6 +4183,9 @@ static void check_battery_soc(void)
 	
 	// convert remaining percentage x10 to 8 bit
 	m_configuration_variables.ui8_battery_SOC_percentage_8b = (uint8_t)(ui16_battery_SOC_percentage_x10 >> 2);
+
+	// expose filtered voltage for shutdown handlers (motor.c)
+	ui16_battery_voltage_filtered_for_shutdown_x10 = ui16_battery_voltage_calibrated_and_filtered_x10;
 }
 
 

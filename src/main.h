@@ -447,6 +447,9 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define BATTERY_VOLTAGE_SHUTDOWN_10_BIT			(uint16_t) (BATTERY_VOLTAGE_SHUTDOWN_8_BIT << 2)
 // battery voltage reset SOC percentage
 #define BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10   (uint16_t)((float)LI_ION_CELL_RESET_SOC_PERCENT * (float)(BATTERY_CELLS_NUMBER * 10))
+// battery change / charge detection hysteresis (unloaded startup vs last shutdown voltage)
+#define BATTERY_SOC_RESET_RISE_HYSTERESIS_X10   (uint16_t)(BATTERY_CELLS_NUMBER * 1)
+#define BATTERY_SOC_RESET_DROP_HYSTERESIS_X10     (uint16_t)(BATTERY_CELLS_NUMBER * 25 / 10)
 // battery SOC eeprom value saved (8 bit)
 #define BATTERY_SOC								0
 // battery SOC % threshold x10 (volts calc)

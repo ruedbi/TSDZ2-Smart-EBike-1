@@ -39,6 +39,10 @@
  #define ADDRESS_CONSUMED_WH_X10_1						EEPROM_BASE_ADDRESS + 21
  #define ADDRESS_CONSUMED_WH_X10_2						EEPROM_BASE_ADDRESS + 22
  #define ADDRESS_CONSUMED_WH_X10_3						EEPROM_BASE_ADDRESS + 23
+ #define ADDRESS_BATTERY_CHANGE_REFERENCE_X10_0			EEPROM_BASE_ADDRESS + 24
+ #define ADDRESS_BATTERY_CHANGE_REFERENCE_X10_1			EEPROM_BASE_ADDRESS + 25
+ #define ADDRESS_BATTERY_LAST_SHUTDOWN_VOLTAGE_X10_0		EEPROM_BASE_ADDRESS + 26
+ #define ADDRESS_BATTERY_LAST_SHUTDOWN_VOLTAGE_X10_1		EEPROM_BASE_ADDRESS + 27
  #define EEPROM_BYTES_STORED                             20
  #define EEPROM_BYTES_STORED_OEM_DISPLAY					13
  #define EEPROM_BYTES_INIT_OEM_DISPLAY					EEPROM_BYTES_STORED - EEPROM_BYTES_STORED_OEM_DISPLAY
@@ -60,5 +64,17 @@ void EEPROM_write_consumed_wh_x10(uint32_t ui32_value);
 /// Writes the consumed watt-hours x10 value assuming the data EEPROM is already
 /// unlocked by the caller (used from the shutdown handler that already holds the lock open).
 void EEPROM_write_consumed_wh_x10_unlocked(uint32_t ui32_value);
+
+/// Last accepted battery-change / SOC-reset voltage (x10 volts); 0 when EEPROM is blank.
+uint16_t EEPROM_read_battery_change_reference_x10(void);
+/// Persists the reference voltage after an accepted battery-change event.
+void EEPROM_write_battery_change_reference_x10(uint16_t ui16_value);
+
+/// Unloaded pack voltage saved at the last power-off (x10 volts); 0 when never saved.
+uint16_t EEPROM_read_battery_last_shutdown_voltage_x10(void);
+/// Persists the last shutdown voltage (standalone; unlocks data EEPROM).
+void EEPROM_write_battery_last_shutdown_voltage_x10(uint16_t ui16_value);
+/// Persists the last shutdown voltage when data EEPROM is already unlocked.
+void EEPROM_write_battery_last_shutdown_voltage_x10_unlocked(uint16_t ui16_value);
 
 #endif /* EEPROM_H_ */
