@@ -451,6 +451,11 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define BATTERY_SOC								0
 // battery SOC % threshold x10 (volts calc)
 #define BATTERY_SOC_PERCENT_THRESHOLD_X10		150
+// Pack voltage range (x10 V) that ui8_battery_soc_used[] is mapped to in read_battery_soc().
+// Full = 41.0 V, empty = 33.0 V. Capacity is distributed piecewise-linearly:
+//   41.0-37.0 V -> 100%-75% (25%), 37.0-34.0 V -> 75%-10% (65%), 34.0-33.0 V -> 10%-0% (10%).
+#define BATTERY_SOC_LOOKUP_VOLTS_FULL_X10		410
+#define BATTERY_SOC_LOOKUP_VOLTS_EMPTY_X10		330
 // SOC calculation
 #define SOC_CALC_AUTO							0
 #define SOC_CALC_WH								1

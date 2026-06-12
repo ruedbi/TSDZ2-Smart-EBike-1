@@ -57,6 +57,7 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define PHASE_CURRENT_LIMIT 20 // Amps; OSF default: 30A
 #endif // LIMIT_CURRENTS
 
+#define USER_SOC_LOOKUP_TABLE
 
 // Speed-dependent motor phase current limit (see ebike_app.c)
 #define PHASE_CURRENT_SPEED_LIMIT_ENABLED 1

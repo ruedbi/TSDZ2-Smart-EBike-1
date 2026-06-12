@@ -95,9 +95,23 @@ volatile uint32_t ui32_wh_offset_x10 = 0;
 static uint32_t ui32_wh_since_power_on_x10 = 0;
 volatile uint16_t ui16_battery_SOC_percentage_x10 = 0;
 static uint8_t ui8_battery_state_of_charge = 0;
+#if !defined (USER_SOC_LOOKUP_TABLE)
 // table tested with Panasonic NCR18650GA, full cell voltage = 4.15 x num.cells, empty cell voltage = 3.15 x num.cells
 static uint8_t ui8_battery_soc_used[100] = {1,1,1,2,2,2,3,3,3,4,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,12,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,32,33,34,35,37,38,39,40,42,43,44,45,47,48,49,51,52,54,55,57,58,59,61,63,64,66,67,69,70,72,73,74,76,77,78,80,81,83,84,86,87,89,90,92,93,94,95,96,97,98,98,99,99,99,99};
-
+#else
+// ruedbi: Piecewise-linear SOC lookup for pack voltage range 41.0 V (full) to 33.0 V (empty).
+// Index 0 = 33.0 V, index 99 = 41.0 V. Capacity distribution (linear within each band):
+//   41.0-37.0 V -> 100%-75%  (25% of capacity)
+//   37.0-34.0 V ->  75%-10%  (65% of capacity)
+//   34.0-33.0 V ->  10%-  0%  (10% of capacity)
+static uint8_t ui8_battery_soc_used[100] = {
+	1,1,2,2,3,4,5,6,6,7,8,9,10,11,13,15,16,18,20,22,
+	23,25,27,29,30,32,34,36,37,39,41,43,44,46,48,50,51,53,55,57,
+	58,60,62,64,65,67,69,71,72,74,75,76,76,77,77,78,78,79,79,80,
+	80,81,81,82,82,83,83,84,84,85,85,86,86,87,87,88,88,89,89,90,
+	90,91,91,92,92,93,93,94,94,95,95,96,96,97,97,98,98,99,99,99
+};
+#endif
 // power control
 static uint8_t ui8_duty_cycle_ramp_up_inverse_step = PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_DEFAULT;
 static uint8_t ui8_duty_cycle_ramp_up_inverse_step_default = PWM_DUTY_CYCLE_RAMP_UP_INVERSE_STEP_DEFAULT;
@@ -4141,12 +4155,20 @@ uint16_t read_battery_soc(void)
 {
 	uint16_t ui16_battery_SOC_calc_x10 = 0;
 	
-	uint8_t ui8_battery_soc_index = (uint8_t) ((uint16_t) 
-		((ui16_battery_voltage_calibrated_and_filtered_x10 - BATTERY_SOC_VOLTS_EMPTY_X10) * 100U)
-		/ (BATTERY_SOC_VOLTS_FULL_X10 - BATTERY_SOC_VOLTS_EMPTY_X10));
-	
-	if (ui8_battery_soc_index > 99) {
+	uint8_t ui8_battery_soc_index;
+
+	// ruedbi: Clamp before indexing: unsigned subtraction underflows when voltage is below empty,
+	// which would otherwise wrap to a large index and read garbage from the lookup table.
+	if (ui16_battery_voltage_calibrated_and_filtered_x10 <= BATTERY_SOC_VOLTS_EMPTY_X10) {
+		ui8_battery_soc_index = 0;
+	}
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 >= BATTERY_SOC_VOLTS_FULL_X10) {
 		ui8_battery_soc_index = 99;
+	}
+	else {
+		ui8_battery_soc_index = (uint8_t) ((uint16_t)
+			((ui16_battery_voltage_calibrated_and_filtered_x10 - BATTERY_SOC_VOLTS_EMPTY_X10) * 100U)
+			/ (BATTERY_SOC_VOLTS_FULL_X10 - BATTERY_SOC_VOLTS_EMPTY_X10));
 	}
 	ui16_battery_SOC_calc_x10 = (uint16_t)(ui8_battery_soc_used[ui8_battery_soc_index] * 10U);
 	
