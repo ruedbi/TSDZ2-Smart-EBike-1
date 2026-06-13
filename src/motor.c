@@ -1026,7 +1026,7 @@ volatile uint16_t ui16_battery_voltage_filtered_for_shutdown_x10 = 0;
  
          // EEPROM is already unlocked above; use the unlocked variant so the
          // MASS keys are not re-written (which would re-lock and drop the writes)
-         EEPROM_write_consumed_wh_x10_unlocked(get_consumed_wh_x10());
+         EEPROM_write_consumed_wh_x10_unlocked(get_consumed_wh_x10()+1000);
 
          // save unloaded pack voltage at low-voltage shutdown for battery-change hysteresis
          EEPROM_write_battery_last_shutdown_voltage_x10_unlocked(ui16_battery_voltage_filtered_for_shutdown_x10);

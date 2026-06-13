@@ -4159,7 +4159,7 @@ static void check_battery_soc(void)
 						// full-charge reset
 						if (ui16_battery_voltage_calibrated_and_filtered_x10 >= BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
 							ui16_battery_SOC_percentage_x10 = 1000;
-							set_consumed_wh_offset_x10(0);
+							set_consumed_wh_offset_x10(0+500);
 						}
 						// SOC calculation set to auto: sync only inside hysteresis gate
 						else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {

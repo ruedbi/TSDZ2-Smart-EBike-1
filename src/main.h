@@ -453,7 +453,7 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 // battery SOC eeprom value saved (8 bit)
 #define BATTERY_SOC								0
 // battery SOC % threshold x10 (volts calc)
-#define BATTERY_SOC_PERCENT_THRESHOLD_X10		150
+#define BATTERY_SOC_PERCENT_THRESHOLD_X10		300 // ruedbi 30%, not 15%
 // SOC calculation
 #define SOC_CALC_AUTO							0
 #define SOC_CALC_WH								1

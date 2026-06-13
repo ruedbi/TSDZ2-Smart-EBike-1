@@ -11,7 +11,7 @@ else
 	echo "Release build"
 fi
 
-version="v299_${MODE}_lm35_phaselimit130_200_26inch_persistent_Wh"
+version="v299_${MODE}_lm35_persistent_Wh_bat_reset_detect"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
