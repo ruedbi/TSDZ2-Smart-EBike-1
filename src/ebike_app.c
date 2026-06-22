@@ -194,6 +194,17 @@ static uint8_t ui8_max_offroad_speed_from_display = WHEEL_MAX_SPEED;
 // tracks which speed limit is active in offroad mode: 0 = offroad (scaled), 1 = street (25 km/h)
 static uint8_t ui8_speed_limit_in_offroad_mode = OFFROAD_MODE;
 
+#if ENABLE_PERIODIC_SHUTDOWN_SAVE
+// distance threshold in speed-sum units: distance_mm = sum * 25 / 36
+#define PERIODIC_SAVE_TRIP_SUM_THRESHOLD ((PERIODIC_SAVE_MIN_TRIP_DISTANCE_MM * 36UL) / 25UL)
+// stopped-time threshold in 25 ms controller cycles (40 cycles per second)
+#define PERIODIC_SAVE_STOPPED_CYCLES ((uint16_t)(PERIODIC_SAVE_STOPPED_SECONDS * 40U))
+// running sum of wheel speed (0.1 km/h) sampled once per 25 ms cycle since the last save
+static uint32_t ui32_periodic_save_trip_speed_sum = 0;
+// consecutive 25 ms cycles with zero wheel speed
+static uint16_t ui16_periodic_save_stopped_cycles = 0;
+#endif
+
 // gesture recognizer: direction constants used in gesture sequence definitions
 #define GESTURE_DIRECTION_UP   0U
 #define GESTURE_DIRECTION_DOWN 1U
@@ -349,6 +360,9 @@ static void apply_motor_phase_current_speed_limit(void);
 static void ebike_control_lights(void);
 static void ebike_control_motor(void);
 static void check_system(void);
+#if ENABLE_PERIODIC_SHUTDOWN_SAVE
+static void check_periodic_shutdown_save(void);
+#endif
 
 static void set_motor_ramp(void);
 static void apply_startup_boost(void);
@@ -624,6 +638,11 @@ void ebike_app_controller(void)
 	
 	// use received data and sensor input to control motor
     ebike_control_motor();
+
+#if ENABLE_PERIODIC_SHUTDOWN_SAVE
+    // periodically persist SOC/Wh mid-ride when stopped after enough distance travelled
+    check_periodic_shutdown_save();
+#endif
 
     /*------------------------------------------------------------------------
 
@@ -1834,6 +1853,39 @@ static void calc_wheel_speed(void)
 		ui16_wheel_speed_x10 = 0;
 	}
 }
+
+#if ENABLE_PERIODIC_SHUTDOWN_SAVE
+// Persists the shutdown snapshot mid-ride once enough distance has been covered and the
+// bike has then stood still long enough, so a sudden power loss loses little SOC/Wh data.
+static void check_periodic_shutdown_save(void)
+{
+    // integrate distance: ui16_wheel_speed_x10 is refreshed once per 25 ms cycle
+    ui32_periodic_save_trip_speed_sum += ui16_wheel_speed_x10;
+
+    if (ui16_wheel_speed_x10 == 0U) {
+        // measure standing-still time, saturating to avoid wrap
+        if (ui16_periodic_save_stopped_cycles < PERIODIC_SAVE_STOPPED_CYCLES) {
+            ui16_periodic_save_stopped_cycles++;
+        }
+    } else {
+        // moving again: restart the stopped-time measurement
+        ui16_periodic_save_stopped_cycles = 0;
+    }
+
+    // covered at least the trip distance AND stood still long enough
+    if ((ui32_periodic_save_trip_speed_sum >= PERIODIC_SAVE_TRIP_SUM_THRESHOLD)
+        && (ui16_periodic_save_stopped_cycles >= PERIODIC_SAVE_STOPPED_CYCLES)) {
+        // the RAM latch loop must not be preempted by ISRs fetching from flash; safe to
+        // block briefly because the bike is stopped and no watchdog is active
+        disableInterrupts();
+        EEPROM_save_shutdown_snapshot();
+        enableInterrupts();
+
+        // require another full trip distance before the next periodic save
+        ui32_periodic_save_trip_speed_sum = 0;
+    }
+}
+#endif
 
 
 static void calc_cadence(void)
