@@ -105,8 +105,8 @@
  volatile uint8_t ui8_battery_SOC_saved_flag = 0;
  volatile uint8_t ui8_battery_SOC_reset_flag = 0;
  // most recent unloaded, calibrated+filtered pack voltage (x10 V), mirrored from
- // check_battery_soc() (its source variable is static in ebike_app.c) so the shutdown
- // handler can persist the last unloaded voltage for the next startup's charge detection
+ // check_battery_soc() (its source variable is static in ebike_app.c) so the power-off
+ // snapshot can persist the last unloaded voltage for the next startup's charge detection
  volatile uint16_t ui16_battery_voltage_filtered_x10_for_shutdown_save = 0;
  
  // Measures did with a 24V Q85 328 RPM motor, rotating motor backwards by hand:
@@ -1003,10 +1003,7 @@
  #endif
      }
      
-     // save percentage remaining battery capacity at shutdown
-     struct_configuration_variables *p_configuration_variables;
-     p_configuration_variables = get_configuration_variables();
-     
+     // save remaining battery capacity and consumed Wh at shutdown
      if ((ui16_adc_voltage < BATTERY_VOLTAGE_SHUTDOWN_10_BIT)
          &&(!ui8_battery_SOC_saved_flag)
          &&(ui8_battery_SOC_reset_flag))
@@ -1015,28 +1012,9 @@
          ui8_motor_enabled = 0;
          motor_disable_pwm();
              
-         // unlock memory
-         FLASH_Unlock(FLASH_MEMTYPE_DATA);
-   
-         // wait until data EEPROM area unlocked flag is set
-         while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {}
- 
-         // write percentage remaining battery capacity x10 8bit to EEPROM
-         FLASH_ProgramByte(ADDRESS_BATTERY_SOC, p_configuration_variables->ui8_battery_SOC_percentage_8b);
-             
-         // wait until end of programming (write or erase operation) flag is set
-         while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {}
- 
-         // EEPROM is already unlocked above; use the unlocked variant so the
-         // MASS keys are not re-written (which would re-lock and drop the writes)
-         EEPROM_write_consumed_wh_x10_unlocked(get_consumed_wh_x10());
-
-         // persist the last unloaded battery voltage so the next startup can tell a real
-         // recharge (voltage risen while off) from a short ride that left the pack full
-         EEPROM_write_battery_voltage_at_shutdown_x10_unlocked(ui16_battery_voltage_filtered_x10_for_shutdown_save);
-
-         // lock memory
-         FLASH_Lock(FLASH_MEMTYPE_DATA);
+         // persist the full configuration snapshot (settings + battery SOC + consumed Wh) in a
+         // single block-programming cycle; the next startup promotes it into the live block
+         EEPROM_save_shutdown_snapshot();
              
          // battery SOC saved
          ui8_battery_SOC_saved_flag = 1;

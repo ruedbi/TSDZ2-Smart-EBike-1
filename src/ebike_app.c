@@ -4100,8 +4100,8 @@ static void check_battery_soc(void)
 	// battery voltage calibrated and filtered x10
 	ui16_battery_voltage_calibrated_and_filtered_x10 = filter(ui16_battery_voltage_calibrated_x10, ui16_battery_voltage_calibrated_and_filtered_x10, 4);
 	
-	// mirror the latest filtered voltage into the shared variable so the shutdown handler in
-	// motor.c can persist it (the source variable above is static to this translation unit)
+	// mirror the latest filtered voltage into the shared variable so the power-off snapshot in
+	// eeprom.c can persist it (the source variable above is static to this translation unit)
 	ui16_battery_voltage_filtered_x10_for_shutdown_save = ui16_battery_voltage_calibrated_and_filtered_x10;
 	
 #if ENABLE_VLCD6 || ENABLE_XH18

@@ -13,6 +13,7 @@
  #include "main.h"
  #include "eeprom.h"
  #include "ebike_app.h"
+ #include "motor.h"
  
  static const uint8_t ui8_default_array[EEPROM_BYTES_STORED] = 
  {
@@ -39,10 +40,17 @@
    TORQUE_SENSOR_ADV_ON_STARTUP					// 19 + EEPROM_BASE_ADDRESS
  };
  
- static uint8_t ui8_error_number = 0;
- 
- void EEPROM_init(void)
- {
+static uint8_t ui8_error_number = 0;
+
+// Computes the CRC-8 (polynomial 0x07, initial value 0x00) over the first \p ui8_length bytes.
+static uint8_t EEPROM_crc8(const uint8_t *ui8_data, uint8_t ui8_length);
+// Builds the 128-byte live-configuration block image (settings + SOC + consumed Wh) in \p ui8_buffer.
+static void EEPROM_build_live_block(uint8_t *ui8_buffer);
+// Promotes a valid shutdown snapshot (block 1) into the live block (block 0) at startup.
+static uint8_t EEPROM_promote_shutdown_block(void);
+
+void EEPROM_init(void)
+{
    volatile uint32_t ui32_delay_counter = 0;
    
    // deinitialize EEPROM
@@ -55,11 +63,15 @@
    FLASH_SetProgrammingTime(FLASH_PROGRAMTIME_STANDARD); // standard programming (erase and write) time mode
    //FLASH_SetProgrammingTime(FLASH_PROGRAMTIME_TPROG); // fast programming (write only) time mode
    
-   // time delay
-   for (ui32_delay_counter = 0; ui32_delay_counter < 160000; ++ui32_delay_counter) {}
-   
-   // read key
-   volatile uint8_t ui8_saved_key = FLASH_ReadByte(ADDRESS_KEY);
+  // time delay
+  for (ui32_delay_counter = 0; ui32_delay_counter < 160000; ++ui32_delay_counter) {}
+  
+  // if the last power-off wrote a valid snapshot block, promote it into the live block before
+  // anything is read, so the key check and READ_FROM_MEMORY below see the persisted values
+  EEPROM_promote_shutdown_block();
+  
+  // read key
+  volatile uint8_t ui8_saved_key = FLASH_ReadByte(ADDRESS_KEY);
    
    // check if key is valid
    if (ui8_saved_key != DEFAULT_VALUE_KEY)
@@ -278,14 +290,6 @@ void EEPROM_write_consumed_wh_x10(uint32_t ui32_value) {
     FLASH_Lock(FLASH_MEMTYPE_DATA);
 }
 
-void EEPROM_write_consumed_wh_x10_unlocked(uint32_t ui32_value) {
-    // caller (e.g. the shutdown handler) has already unlocked the data EEPROM.
-    // Re-running FLASH_Unlock here would re-write the MASS keys and re-lock the
-    // EEPROM (clearing DUL), causing the byte writes to be silently dropped.
-    EEPROM_program_consumed_wh_x10(ui32_value);
-}
-
-
 uint32_t EEPROM_read_consumed_wh_x10(void) {
         uint32_t ui32_value;
     
@@ -301,41 +305,107 @@ uint32_t EEPROM_read_consumed_wh_x10(void) {
         return ui32_value;
 }
 
-/// Programs the 2 battery-voltage-at-shutdown bytes, assuming the data EEPROM is
-/// already unlocked. Shared by the locked and unlocked public entry points so the
-/// byte-programming logic exists in only one place.
-static void EEPROM_program_battery_voltage_at_shutdown_x10(uint16_t ui16_value) {
+static uint8_t EEPROM_crc8(const uint8_t *ui8_data, uint8_t ui8_length) {
+    uint8_t ui8_crc = 0x00;
     uint8_t ui8_i;
-    uint32_t ui32_address;
+    uint8_t ui8_bit;
 
-    // store the 16-bit value little-endian across 2 consecutive EEPROM bytes
-    for (ui8_i = 0; ui8_i < 2; ui8_i++) {
-        ui32_address = (uint32_t)ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0 + ui8_i;
-        FLASH_ProgramByte(ui32_address, (uint8_t)(ui16_value >> (ui8_i * 8)));
-        // wait until end of programming flag is set before writing the next byte
-        while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {
+    // standard bitwise CRC-8 with polynomial 0x07 (MSB-first), no input/output reflection
+    for (ui8_i = 0; ui8_i < ui8_length; ui8_i++) {
+        ui8_crc ^= ui8_data[ui8_i];
+        for (ui8_bit = 0; ui8_bit < 8; ui8_bit++) {
+            if (ui8_crc & 0x80) {
+                ui8_crc = (uint8_t)((ui8_crc << 1) ^ 0x07);
+            } else {
+                ui8_crc = (uint8_t)(ui8_crc << 1);
+            }
         }
     }
+
+    return ui8_crc;
 }
 
-void EEPROM_write_battery_voltage_at_shutdown_x10(uint16_t ui16_value) {
-    // standalone caller: data EEPROM is locked, so unlock it here first
+void EEPROM_write_block_with_crc(uint8_t ui8_block_index, uint8_t *ui8_buffer) {
+    // append the CRC-8 of all data bytes as the last byte of the block so the stored block
+    // can be validated on the next startup before it is trusted
+    ui8_buffer[FLASH_BLOCK_SIZE - 1] = EEPROM_crc8(ui8_buffer, FLASH_BLOCK_SIZE - 1);
+
+    // unlock memory
     FLASH_Unlock(FLASH_MEMTYPE_DATA);
 
     // wait until data EEPROM area unlocked flag is set
-    while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {
-    }
+    while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {}
 
-    EEPROM_program_battery_voltage_at_shutdown_x10(ui16_value);
+    // program the whole block in a single cycle (standard mode erases then writes the block);
+    // the 128 source bytes are latched from the RAM buffer in one operation
+    FLASH_ProgramBlock((uint16_t)ui8_block_index, FLASH_MEMTYPE_DATA, FLASH_PROGRAMMODE_STANDARD, ui8_buffer);
+
+    // wait until end of programming (write or erase operation) flag is set
+    while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {}
 
     // lock memory
     FLASH_Lock(FLASH_MEMTYPE_DATA);
 }
 
-void EEPROM_write_battery_voltage_at_shutdown_x10_unlocked(uint16_t ui16_value) {
-    // caller (e.g. the shutdown handler) has already unlocked the data EEPROM; re-running
-    // FLASH_Unlock here would re-write the MASS keys and re-lock it, dropping the writes.
-    EEPROM_program_battery_voltage_at_shutdown_x10(ui16_value);
+static void EEPROM_build_live_block(uint8_t *ui8_buffer) {
+    struct_configuration_variables *p_configuration_variables;
+    uint32_t ui32_consumed_wh_x10;
+    uint8_t ui8_i;
+
+    p_configuration_variables = get_configuration_variables();
+
+    // start from a fully zeroed block so unused bytes (and the CRC byte) are deterministic
+    for (ui8_i = 0; ui8_i < FLASH_BLOCK_SIZE; ui8_i++) {
+        ui8_buffer[ui8_i] = 0;
+    }
+
+    // key marks the block as written and is checked before the block is trusted at startup
+    ui8_buffer[ADDRESS_KEY - EEPROM_BASE_ADDRESS] = DEFAULT_VALUE_KEY;
+
+    ui8_buffer[ADDRESS_BATTERY_CURRENT_MAX - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_battery_current_max;
+
+    ui8_buffer[ADDRESS_BATTERY_LOW_VOLTAGE_CUT_OFF_X10_0 - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui16_battery_low_voltage_cut_off_x10 & 255;
+    ui8_buffer[ADDRESS_BATTERY_LOW_VOLTAGE_CUT_OFF_X10_1 - EEPROM_BASE_ADDRESS] = (p_configuration_variables->ui16_battery_low_voltage_cut_off_x10 >> 8) & 255;
+
+    ui8_buffer[ADDRESS_WHEEL_PERIMETER_0 - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui16_wheel_perimeter & 255;
+    ui8_buffer[ADDRESS_WHEEL_PERIMETER_1 - EEPROM_BASE_ADDRESS] = (p_configuration_variables->ui16_wheel_perimeter >> 8) & 255;
+
+    ui8_buffer[ADDRESS_STARTUP_ASSIST_ENABLED - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_startup_assist_enabled;
+    ui8_buffer[ADDRESS_TORQUE_SENSOR_ESTIMATED - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_torque_sensor_estimated;
+    ui8_buffer[ADDRESS_PEDAL_TORQUE_PER_10_BIT_ADC_STEP_X100 - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_pedal_torque_per_10_bit_ADC_step_est_x100;
+    ui8_buffer[ADDRESS_MOTOR_ASSISTANCE_WITHOUT_PEDAL_ROTATION - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_assist_without_pedal_rotation_enabled;
+    ui8_buffer[ADDRESS_MOTOR_ASSISTANCE_WITH_ERROR_ENABLED - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_assist_with_error_enabled;
+    // battery SOC at power-off: the value to be restored on the next startup
+    ui8_buffer[ADDRESS_BATTERY_SOC - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_battery_SOC_percentage_8b;
+    ui8_buffer[ADDRESS_SET_PARAMETER_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_set_parameter_enabled;
+    ui8_buffer[ADDRESS_STREET_MODE_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_street_mode_enabled;
+    ui8_buffer[ADDRESS_RIDING_MODE_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_riding_mode;
+    ui8_buffer[ADDRESS_LIGHTS_CONFIGURATION_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_lights_configuration;
+    ui8_buffer[ADDRESS_STARTUP_BOOST_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_startup_boost_enabled;
+    ui8_buffer[ADDRESS_ENABLE_AUTO_DATA_DISPLAY - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_auto_display_data_enabled;
+    ui8_buffer[ADDRESS_SOC_PERCENT_CALC - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_soc_percent_calculation;
+    ui8_buffer[ADDRESS_TORQUE_SENSOR_ADV_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_torque_sensor_adv_enabled;
+
+    // consumed watt-hours x10 at power-off, stored little-endian across 4 bytes
+    ui32_consumed_wh_x10 = get_consumed_wh_x10();
+    ui8_buffer[ADDRESS_CONSUMED_WH_X10_0 - EEPROM_BASE_ADDRESS] = (uint8_t)(ui32_consumed_wh_x10 & 0xFF);
+    ui8_buffer[ADDRESS_CONSUMED_WH_X10_1 - EEPROM_BASE_ADDRESS] = (uint8_t)((ui32_consumed_wh_x10 >> 8) & 0xFF);
+    ui8_buffer[ADDRESS_CONSUMED_WH_X10_2 - EEPROM_BASE_ADDRESS] = (uint8_t)((ui32_consumed_wh_x10 >> 16) & 0xFF);
+    ui8_buffer[ADDRESS_CONSUMED_WH_X10_3 - EEPROM_BASE_ADDRESS] = (uint8_t)((ui32_consumed_wh_x10 >> 24) & 0xFF);
+
+    // unloaded battery voltage x10 at power-off, stored little-endian across 2 bytes; the next
+    // startup uses it to detect whether the battery was charged or swapped while powered off
+    ui8_buffer[ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0 - EEPROM_BASE_ADDRESS] = (uint8_t)(ui16_battery_voltage_filtered_x10_for_shutdown_save & 0xFF);
+    ui8_buffer[ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1 - EEPROM_BASE_ADDRESS] = (uint8_t)((ui16_battery_voltage_filtered_x10_for_shutdown_save >> 8) & 0xFF);
+}
+
+void EEPROM_save_shutdown_snapshot(void) {
+    uint8_t ui8_block[FLASH_BLOCK_SIZE];
+
+    // assemble the current configuration + dynamic values, then persist it as the shutdown
+    // snapshot in a single block-programming cycle
+    EEPROM_build_live_block(ui8_block);
+    EEPROM_write_block_with_crc(EEPROM_SHUTDOWN_BLOCK, ui8_block);
 }
 
 uint16_t EEPROM_read_battery_voltage_at_shutdown_x10(void) {
@@ -344,9 +414,38 @@ uint16_t EEPROM_read_battery_voltage_at_shutdown_x10(void) {
     ui16_value = (uint16_t)FLASH_ReadByte(ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0);
     ui16_value |= (uint16_t)FLASH_ReadByte(ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1) << 8;
 
-    // A blank STM8 data EEPROM reads 0x00, so 0 is the intended "uninitialized" sentinel.
-    // Return the raw value: unlike consumed-Wh there is no 0xFFFF -> 0 conversion here.
+    // a blank STM8 data EEPROM reads 0x00, so 0 is the intended "uninitialized" sentinel
     return ui16_value;
 }
-    
+
+static uint8_t EEPROM_promote_shutdown_block(void) {
+    uint8_t ui8_block[FLASH_BLOCK_SIZE];
+    uint32_t ui32_shutdown_block_address;
+    uint8_t ui8_i;
+
+    // the shutdown block starts one block above the live block
+    ui32_shutdown_block_address = (uint32_t)EEPROM_BASE_ADDRESS + FLASH_BLOCK_SIZE;
+
+    // read the whole shutdown block into RAM
+    for (ui8_i = 0; ui8_i < FLASH_BLOCK_SIZE; ui8_i++) {
+        ui8_block[ui8_i] = FLASH_ReadByte(ui32_shutdown_block_address + ui8_i);
+    }
+
+    // reject a blank/never-written block: a freshly flashed data EEPROM reads 0x00, so the
+    // key (which is non-zero for a valid block) catches that case before the CRC is trusted
+    if (ui8_block[ADDRESS_KEY - EEPROM_BASE_ADDRESS] != DEFAULT_VALUE_KEY) {
+        return 0;
+    }
+
+    // reject a corrupted / partially written block
+    if (EEPROM_crc8(ui8_block, FLASH_BLOCK_SIZE - 1) != ui8_block[FLASH_BLOCK_SIZE - 1]) {
+        return 0;
+    }
+
+    // snapshot is valid: overwrite the live block with it so the normal read path picks it up
+    EEPROM_write_block_with_crc(EEPROM_LIVE_BLOCK, ui8_block);
+
+    return 1;
+}
+
     

@@ -46,7 +46,7 @@ extern volatile uint16_t ui16_wheel_speed_sensor_ticks;
 extern volatile uint8_t ui8_battery_SOC_saved_flag;
 extern volatile uint8_t ui8_battery_SOC_reset_flag;
 // most recent unloaded, calibrated+filtered pack voltage (x10 V), mirrored from
-// check_battery_soc() so the shutdown handler can persist it at power-off
+// check_battery_soc() so the power-off snapshot can persist it at power-off
 extern volatile uint16_t ui16_battery_voltage_filtered_x10_for_shutdown_save;
 
 void hall_sensor_init(void);  // must be called before using the motor
