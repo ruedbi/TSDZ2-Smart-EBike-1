@@ -60,6 +60,7 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define USER_SOC_LOOKUP_TABLE
 
 #define BLOCK_SAVE
+#define COPY_TO_RAM
 
 // Speed-dependent motor phase current limit (see ebike_app.c)
 #define PHASE_CURRENT_SPEED_LIMIT_ENABLED 1

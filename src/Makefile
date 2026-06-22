@@ -44,6 +44,8 @@ ELF_SECTIONS_TO_REMOVE = -R DATA -R INITIALIZED -R SSEG
 	adc.c \
 	timers.c \
 	eeprom.c \
+	flash_ram.c \
+	flash_ram_routine.c \
 	lights.c \
 	$(SDIR)/stm8s_iwdg.c \
 	$(SDIR)/stm8s_itc.c \
@@ -59,7 +61,7 @@ ELF_SECTIONS_TO_REMOVE = -R DATA -R INITIALIZED -R SSEG
 	$(SDIR)/stm8s_flash.c \
 
 HEADERS = common.h torque_sensor.h interrupts.h main.h uart.h pwm.h motor.h wheel_speed_sensor.h brake.h pas.h adc.h timers.h \
-ebike_app.h pins.h eeprom.h lights.h config.h
+ebike_app.h pins.h eeprom.h flash_ram.h lights.h config.h
 
 # The list of .rel files can be derived from the list of their source files
 RELS = $(addprefix $(ODIR)/,$(notdir $(EXTRASRCS:.c=.rel)))

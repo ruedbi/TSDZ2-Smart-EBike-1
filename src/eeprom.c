@@ -11,9 +11,11 @@
  #include "stm8s.h"
  #include "stm8s_flash.h"
  #include "main.h"
+ #include "common.h"
  #include "eeprom.h"
  #include "ebike_app.h"
  #include "motor.h"
+ #include "flash_ram.h"
  
  static const uint8_t ui8_default_array[EEPROM_BYTES_STORED] = 
  {
@@ -52,7 +54,13 @@ static uint8_t EEPROM_promote_shutdown_block(void);
 void EEPROM_init(void)
 {
    volatile uint32_t ui32_delay_counter = 0;
-   
+
+#ifdef COPY_TO_RAM
+   // relocate the block-program routine into RAM before any block write (the promote
+   // below may write the live block)
+   flash_ram_init();
+#endif
+
    // deinitialize EEPROM
    FLASH_DeInit();
    
@@ -338,7 +346,15 @@ void EEPROM_write_block_with_crc(uint8_t ui8_block_index, uint8_t *ui8_buffer) {
 
     // program the whole block in a single cycle (standard mode erases then writes the block);
     // the 128 source bytes are latched from the RAM buffer in one operation
+#ifdef COPY_TO_RAM
+    // run the byte-latching loop from RAM; the destination address is computed here
+    // (in flash) so the relocated routine itself stays call-free and position independent
+    flash_program_block_ram_ptr(
+        (uint8_t *)(FLASH_DATA_START_PHYSICAL_ADDRESS + ((uint16_t)ui8_block_index * FLASH_BLOCK_SIZE)),
+        ui8_buffer);
+#else
     FLASH_ProgramBlock((uint16_t)ui8_block_index, FLASH_MEMTYPE_DATA, FLASH_PROGRAMMODE_STANDARD, ui8_buffer);
+#endif
 
     // wait until end of programming (write or erase operation) flag is set
     while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {}
