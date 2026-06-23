@@ -3117,6 +3117,7 @@ static void uart_receive_package(void)
 			// walk assist button pressed within 5 seconds of power on
 			if ((ui8_walk_assist_button_pressed)&&(!ui8_startup_flag)) {
 				ui16_battery_SOC_percentage_x10 = read_battery_soc();
+				set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
 				if (!ui8_battery_SOC_reset_flag) {
 					ui8_battery_SOC_reset_flag = 1;
 					// restart startup counter
@@ -4221,6 +4222,7 @@ static void check_battery_soc(void)
 								// sync soc percentage to the voltage-derived value; do not zero the
 								// consumed Wh offset here as the pack is not known to be full
 								ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
+								set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
 							}
 						}
 					}
