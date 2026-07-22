@@ -261,6 +261,8 @@ static uint16_t s_standstillOffroadRevertCounter = 0U;
 static uint8_t ui8_display_ready_flag = 0;
 static uint8_t ui8_startup_counter = 0;
 static uint8_t ui8_startup_flag = 0;
+/// Startup data display phase: 0 = configured metric (voltage/SOC%), 1 = consumed Wh
+static uint8_t ui8_startup_display_phase = 0;
 static uint16_t ui16_oem_wheel_speed_time = 0;
 static uint8_t ui8_oem_wheel_diameter = 0;
 static uint32_t ui32_odometer_compensation_mm = ZERO_ODOMETER_COMPENSATION;
@@ -3122,6 +3124,8 @@ static void uart_receive_package(void)
 					ui8_battery_SOC_reset_flag = 1;
 					// restart startup counter
 					ui8_startup_counter = 0;
+					// show SOC% for a full first half again before Wh
+					ui8_startup_display_phase = 0;
 				}
 				// for display soc %
 				ui8_display_data_on_startup = 1; // SOC%
@@ -3779,21 +3783,38 @@ static void uart_send_package(void)
 				}
 			}
 			else if ((ui8_display_data_on_startup)&&(!ui8_startup_flag)) {
-				switch (ui8_display_data_on_startup) {
-					case 1:
+				if (ui8_startup_display_phase == 0U) {
+					// first half: configured startup metric (SOC% or voltage)
+					switch (ui8_display_data_on_startup) {
+						case 1:
 #if UNITS_TYPE == MILES
-						ui16_display_data = (ui16_display_data_factor / ui16_battery_SOC_percentage_x10) * 10U;
+							ui16_display_data = (ui16_display_data_factor / ui16_battery_SOC_percentage_x10) * 10U;
 #else
-						ui16_display_data = ui16_display_data_factor / ui16_battery_SOC_percentage_x10;
+							ui16_display_data = ui16_display_data_factor / ui16_battery_SOC_percentage_x10;
 #endif
-						break;
-					case 2:
-						// battery voltage soc filtered and calibrated x10
-						ui16_display_data = ui16_display_data_factor / ui16_battery_voltage_calibrated_and_filtered_x10;
-						break;
-					default:
+							break;
+						case 2:
+							// battery voltage soc filtered and calibrated x10
+							ui16_display_data = ui16_display_data_factor / ui16_battery_voltage_calibrated_and_filtered_x10;
+							break;
+						default:
+							ui16_display_data = 0;
+							break;
+					}
+				}
+				else {
+					// second half: consumed Wh (same formula as display data case 10)
+					if (ui32_wh_x10 > 0U) {
+#if UNITS_TYPE == MILES
+						ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_wh_x10;
+#else
+						ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
+#endif
+					}
+					else {
+						// fresh/full pack: blank rather than divide by zero
 						ui16_display_data = 0;
-						break;
+					}
 				}
 			}
 			else if ((ui8_menu_counter <= ui8_delay_display_function)&&(ui8_menu_index > 0U)&&((ui8_assist_level < TOUR)||(ui8_display_alternative_lights_configuration))) { // OFF & ECO & alternative lights configuration
@@ -4201,6 +4222,8 @@ static void check_battery_soc(void)
 			ui8_startup_counter++;
 			// waiting for voltage filter
 			if (ui8_startup_counter >= (DELAY_MENU_ON >> 1)) {
+				// second half of startup: show consumed Wh after voltage/SOC%
+				ui8_startup_display_phase = 1;
 				if (!ui8_battery_SOC_reset_flag) {
 					// Only accept a reset when the unloaded voltage has risen since the last
 					// power-off (battery charged or swapped to a fuller pack). This hysteresis
