@@ -69,6 +69,11 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define PERIODIC_SAVE_MIN_TRIP_DISTANCE_MM 1000000UL  // 1 km
 #define PERIODIC_SAVE_STOPPED_SECONDS      5U
 
+// Manual battery-SOC/Wh override via the walk-assist ("down") button during the startup
+// window. Disabled by default; the automatic voltage-rise battery-swap detection in
+// ebike_app.c is unaffected either way.
+#define ENABLE_WALK_ASSIST_WH_RESET 0
+
 // Speed-dependent motor phase current limit (see ebike_app.c)
 #define PHASE_CURRENT_SPEED_LIMIT_ENABLED 1
 #if PHASE_CURRENT_SPEED_LIMIT_ENABLED
