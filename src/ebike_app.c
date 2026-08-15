@@ -3805,17 +3805,22 @@ static void uart_send_package(void)
 				}
 				else {
 					// second half: consumed Wh (same formula as display data case 10)
-					if (ui32_wh_x10 > 0U) {
 #if UNITS_TYPE == MILES
+					if (ui32_wh_x10 > 0U) {
 						ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_wh_x10;
-#else
-						ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
-#endif
 					}
 					else {
-						// fresh/full pack: blank rather than divide by zero
 						ui16_display_data = 0;
 					}
+#else
+					if (ui32_wh_x10 >= 10U) {
+						ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
+					}
+					else {
+						// fresh/full pack (< 1 Wh consumed): blank rather than divide by zero
+						ui16_display_data = 0;
+					}
+#endif
 				}
 			}
 			else if ((ui8_menu_counter <= ui8_delay_display_function)&&(ui8_menu_index > 0U)&&((ui8_assist_level < TOUR)||(ui8_display_alternative_lights_configuration))) { // OFF & ECO & alternative lights configuration
@@ -3897,9 +3902,19 @@ static void uart_send_package(void)
 				  break;
 				case 10:
 #if UNITS_TYPE == MILES
-					ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_wh_x10;
+					if (ui32_wh_x10 > 0U) {
+						ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_wh_x10;
+					}
+					else {
+						ui16_display_data = 0;
+					}
 #else
-					ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
+					if (ui32_wh_x10 >= 10U) {
+						ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
+					}
+					else {
+						ui16_display_data = 0;
+					}
 #endif
 				  break;
 				case 11:
