@@ -4135,12 +4135,19 @@ static void calc_watt_hours_used(void)
 	// battery power x 10
 	ui16_battery_power_x10 = (uint16_t)(((uint32_t) ui16_battery_voltage_calibrated_and_filtered_x10 * ui8_battery_current_filtered_x10) / 10);
 	
+	// ui32_wh_sum_x10/ui32_wh_since_power_on_x10/ui32_wh_x10 are 32-bit values updated here in
+	// the foreground, but also read by get_consumed_wh_x10() from the PWM ISR's low-voltage
+	// shutdown-save trigger (motor.c). On this 8-bit CPU a 32-bit update is several byte-wide
+	// bus operations, so without this guard the ISR could preempt mid-update and persist a torn
+	// (half-old/half-new) Wh value at power-off. Disabling interrupts makes the update atomic.
+	disableInterrupts();
 	// consumed watt-hours
 	ui32_wh_sum_x10 += ui16_battery_power_x10;
 	// calculate watt-hours X10 since power on
 	ui32_wh_since_power_on_x10 = ui32_wh_sum_x10 / 32400; // 36000 -10% calibration to compensate for battery losses
 	// calculate watt-hours X10 since last full charge
 	ui32_wh_x10 = ui32_wh_offset_x10 + ui32_wh_since_power_on_x10;
+	enableInterrupts();
 }
 
 
