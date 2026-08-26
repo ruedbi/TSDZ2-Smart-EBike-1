@@ -1012,12 +1012,14 @@
          ui8_motor_enabled = 0;
          motor_disable_pwm();
              
-         // persist the full configuration snapshot (settings + battery SOC + consumed Wh) in a
-         // single block-programming cycle; the next startup promotes it into the live block
-         EEPROM_save_shutdown_snapshot();
+        // persist the full configuration snapshot (settings + battery SOC + consumed Wh) in a
+        // single block-programming cycle; nested ISRs must not run here: they share SDCC
+        // overlay RAM with this call tree and would also fetch from flash during programming
+        disableInterrupts();
+        EEPROM_save_shutdown_snapshot();
              
-         // battery SOC saved
-         ui8_battery_SOC_saved_flag = 1;
+        // battery SOC saved
+        ui8_battery_SOC_saved_flag = 1;
      }
      
      /****************************************************************************/

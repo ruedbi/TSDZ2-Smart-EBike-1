@@ -44,6 +44,11 @@
  
 static uint8_t ui8_error_number = 0;
 
+/// Shared 128-byte image for block program/promote. File-scope so the PWM ISR
+/// save path does not put a FLASH_BLOCK_SIZE array on SDCC overlay RAM (nested
+/// ISRs share that overlay and would corrupt the snapshot while it is built).
+static uint8_t ui8_eeprom_block_buffer[FLASH_BLOCK_SIZE];
+
 // Computes the CRC-8 (polynomial 0x07, initial value 0x00) over the first \p ui8_length bytes.
 static uint8_t EEPROM_crc8(const uint8_t *ui8_data, uint8_t ui8_length);
 // Builds the 128-byte live-configuration block image (settings + SOC + consumed Wh) in \p ui8_buffer.
@@ -365,7 +370,6 @@ void EEPROM_write_block_with_crc(uint8_t ui8_block_index, uint8_t *ui8_buffer) {
 
 static void EEPROM_build_live_block(uint8_t *ui8_buffer) {
     struct_configuration_variables *p_configuration_variables;
-    uint32_t ui32_consumed_wh_x10;
     uint8_t ui8_i;
 
     p_configuration_variables = get_configuration_variables();
@@ -402,12 +406,12 @@ static void EEPROM_build_live_block(uint8_t *ui8_buffer) {
     ui8_buffer[ADDRESS_SOC_PERCENT_CALC - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_soc_percent_calculation;
     ui8_buffer[ADDRESS_TORQUE_SENSOR_ADV_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_torque_sensor_adv_enabled;
 
-    // consumed watt-hours x10 at power-off, stored little-endian across 4 bytes
-    ui32_consumed_wh_x10 = get_consumed_wh_x10();
-    ui8_buffer[ADDRESS_CONSUMED_WH_X10_0 - EEPROM_BASE_ADDRESS] = (uint8_t)(ui32_consumed_wh_x10 & 0xFF);
-    ui8_buffer[ADDRESS_CONSUMED_WH_X10_1 - EEPROM_BASE_ADDRESS] = (uint8_t)((ui32_consumed_wh_x10 >> 8) & 0xFF);
-    ui8_buffer[ADDRESS_CONSUMED_WH_X10_2 - EEPROM_BASE_ADDRESS] = (uint8_t)((ui32_consumed_wh_x10 >> 16) & 0xFF);
-    ui8_buffer[ADDRESS_CONSUMED_WH_X10_3 - EEPROM_BASE_ADDRESS] = (uint8_t)((ui32_consumed_wh_x10 >> 24) & 0xFF);
+    // consumed watt-hours x10 at power-off: copy the main-loop latch byte-wise so
+    // this ISR-reachable path never performs a 32-bit add on SDCC overlay RAM
+    ui8_buffer[ADDRESS_CONSUMED_WH_X10_0 - EEPROM_BASE_ADDRESS] = ui8_consumed_wh_x10_for_shutdown_save[0];
+    ui8_buffer[ADDRESS_CONSUMED_WH_X10_1 - EEPROM_BASE_ADDRESS] = ui8_consumed_wh_x10_for_shutdown_save[1];
+    ui8_buffer[ADDRESS_CONSUMED_WH_X10_2 - EEPROM_BASE_ADDRESS] = ui8_consumed_wh_x10_for_shutdown_save[2];
+    ui8_buffer[ADDRESS_CONSUMED_WH_X10_3 - EEPROM_BASE_ADDRESS] = ui8_consumed_wh_x10_for_shutdown_save[3];
 
     // unloaded battery voltage x10 at power-off, stored little-endian across 2 bytes; the next
     // startup uses it to detect whether the battery was charged or swapped while powered off
@@ -416,12 +420,10 @@ static void EEPROM_build_live_block(uint8_t *ui8_buffer) {
 }
 
 void EEPROM_save_shutdown_snapshot(void) {
-    uint8_t ui8_block[FLASH_BLOCK_SIZE];
-
     // assemble the current configuration + dynamic values, then persist it as the shutdown
     // snapshot in a single block-programming cycle
-    EEPROM_build_live_block(ui8_block);
-    EEPROM_write_block_with_crc(EEPROM_SHUTDOWN_BLOCK, ui8_block);
+    EEPROM_build_live_block(ui8_eeprom_block_buffer);
+    EEPROM_write_block_with_crc(EEPROM_SHUTDOWN_BLOCK, ui8_eeprom_block_buffer);
 }
 
 uint16_t EEPROM_read_battery_voltage_at_shutdown_x10(void) {
@@ -435,7 +437,6 @@ uint16_t EEPROM_read_battery_voltage_at_shutdown_x10(void) {
 }
 
 static uint8_t EEPROM_promote_shutdown_block(void) {
-    uint8_t ui8_block[FLASH_BLOCK_SIZE];
     uint32_t ui32_shutdown_block_address;
     uint8_t ui8_i;
 
@@ -444,22 +445,22 @@ static uint8_t EEPROM_promote_shutdown_block(void) {
 
     // read the whole shutdown block into RAM
     for (ui8_i = 0; ui8_i < FLASH_BLOCK_SIZE; ui8_i++) {
-        ui8_block[ui8_i] = FLASH_ReadByte(ui32_shutdown_block_address + ui8_i);
+        ui8_eeprom_block_buffer[ui8_i] = FLASH_ReadByte(ui32_shutdown_block_address + ui8_i);
     }
 
     // reject a blank/never-written block: a freshly flashed data EEPROM reads 0x00, so the
     // key (which is non-zero for a valid block) catches that case before the CRC is trusted
-    if (ui8_block[ADDRESS_KEY - EEPROM_BASE_ADDRESS] != DEFAULT_VALUE_KEY) {
+    if (ui8_eeprom_block_buffer[ADDRESS_KEY - EEPROM_BASE_ADDRESS] != DEFAULT_VALUE_KEY) {
         return 0;
     }
 
     // reject a corrupted / partially written block
-    if (EEPROM_crc8(ui8_block, FLASH_BLOCK_SIZE - 1) != ui8_block[FLASH_BLOCK_SIZE - 1]) {
+    if (EEPROM_crc8(ui8_eeprom_block_buffer, FLASH_BLOCK_SIZE - 1) != ui8_eeprom_block_buffer[FLASH_BLOCK_SIZE - 1]) {
         return 0;
     }
 
     // snapshot is valid: overwrite the live block with it so the normal read path picks it up
-    EEPROM_write_block_with_crc(EEPROM_LIVE_BLOCK, ui8_block);
+    EEPROM_write_block_with_crc(EEPROM_LIVE_BLOCK, ui8_eeprom_block_buffer);
 
     return 1;
 }

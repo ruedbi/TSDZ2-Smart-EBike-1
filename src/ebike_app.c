@@ -92,10 +92,13 @@ static uint16_t ui16_battery_voltage_at_last_shutdown_x10 = 0;
 static uint16_t ui16_battery_power_x10 = 0;															  
 static uint16_t ui16_battery_power_filtered_x10 = 0;
 static uint16_t ui16_actual_battery_capacity = (uint16_t)(((uint32_t) TARGET_MAX_BATTERY_CAPACITY * ACTUAL_BATTERY_CAPACITY_PERCENT) / 100);
-static uint32_t ui32_wh_x10 = 0;
+static volatile uint32_t ui32_wh_x10 = 0;
 static uint32_t ui32_wh_sum_x10 = 0;
 volatile uint32_t ui32_wh_offset_x10 = 0;
-static uint32_t ui32_wh_since_power_on_x10 = 0;
+static volatile uint32_t ui32_wh_since_power_on_x10 = 0;
+/// Overall consumed Wh x10 as 4 little-endian bytes, latched after each main-loop
+/// update so the shutdown ISR never has to add two 32-bit values on overlay RAM.
+volatile uint8_t ui8_consumed_wh_x10_for_shutdown_save[4];
 volatile uint16_t ui16_battery_SOC_percentage_x10 = 0;
 static uint8_t ui8_battery_state_of_charge = 0;
 #if !defined (USER_SOC_LOOKUP_TABLE)
@@ -388,6 +391,7 @@ static void apply_torque_sensor_calibration(void);
 
 // battery soc percentage x10 calculation
 static void set_consumed_wh_offset_x10(uint32_t offset_x10);
+static void latch_consumed_wh_x10_for_shutdown_save(uint32_t ui32_overall_wh_x10);
 static void calc_watt_hours_used(void);
 static void check_battery_soc(void);
 uint16_t read_battery_soc(void);
@@ -488,6 +492,9 @@ void ebike_app_init(void)
 		else {
 			ui32_wh_offset_x10 = ui32_eeprom_wh_x10;
 		}
+		// no ride energy yet; latch the restored overall total for an immediate power-off
+		ui32_wh_x10 = ui32_wh_offset_x10;
+		latch_consumed_wh_x10_for_shutdown_save(ui32_wh_x10);
 	}
 
 	// unloaded pack voltage recorded at the last regular power-off; used at startup to detect
@@ -4115,18 +4122,36 @@ static void calc_oem_wheel_speed(void)
 } 
 
 
+/// Copies the overall consumed Wh x10 into the 4-byte latch used at power-off.
+/// Must run in the main loop (or init): a 32-bit add/shift inside the PWM ISR
+/// uses SDCC overlay RAM that nested ISRs (UART, TIM4, Hall) share and can
+/// clobber, which dropped the offset and persisted only the current-ride Wh.
+static void latch_consumed_wh_x10_for_shutdown_save(uint32_t ui32_overall_wh_x10)
+{
+	ui8_consumed_wh_x10_for_shutdown_save[0] = (uint8_t)(ui32_overall_wh_x10);
+	ui8_consumed_wh_x10_for_shutdown_save[1] = (uint8_t)(ui32_overall_wh_x10 >> 8);
+	ui8_consumed_wh_x10_for_shutdown_save[2] = (uint8_t)(ui32_overall_wh_x10 >> 16);
+	ui8_consumed_wh_x10_for_shutdown_save[3] = (uint8_t)(ui32_overall_wh_x10 >> 24);
+}
+
+
 static void set_consumed_wh_offset_x10(uint32_t offset_x10)
 {
 	ui32_wh_offset_x10 = offset_x10;
 	ui32_wh_sum_x10 = 0;
 	ui32_wh_since_power_on_x10 = 0;
+	ui32_wh_x10 = offset_x10;
+	latch_consumed_wh_x10_for_shutdown_save(offset_x10);
 	EEPROM_write_consumed_wh_x10(offset_x10);
 }
 
 
+/// Returns the overall consumed watt-hours x10 (offset plus this power-on session).
+/// The value is the main-loop total, not a fresh 32-bit add, so callers including
+/// the shutdown path stay consistent with what the display showed.
 uint32_t get_consumed_wh_x10(void)
 {
-	return ui32_wh_offset_x10 + ui32_wh_since_power_on_x10;
+	return ui32_wh_x10;
 }
 
 
@@ -4147,6 +4172,7 @@ static void calc_watt_hours_used(void)
 	ui32_wh_since_power_on_x10 = ui32_wh_sum_x10 / 32400; // 36000 -10% calibration to compensate for battery losses
 	// calculate watt-hours X10 since last full charge
 	ui32_wh_x10 = ui32_wh_offset_x10 + ui32_wh_since_power_on_x10;
+	latch_consumed_wh_x10_for_shutdown_save(ui32_wh_x10);
 	enableInterrupts();
 }
 

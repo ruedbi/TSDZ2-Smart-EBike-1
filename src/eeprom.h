@@ -80,7 +80,8 @@ void EEPROM_write_block_with_crc(uint8_t ui8_block_index, uint8_t *ui8_buffer);
 
 /// Builds the current configuration snapshot (settings + battery SOC + consumed Wh) and
 /// writes it to the shutdown block in a single block-programming cycle. Called from the
-/// power-off handler so the next startup can promote it into the live block.
+/// power-off ISR (interrupts disabled) and from the periodic mid-ride save; Wh bytes
+/// come from the main-loop latch, not from a 32-bit add in this path.
 void EEPROM_save_shutdown_snapshot(void);
 
 /// Reads the unloaded battery voltage (x10 V) recorded in the live block at the last regular
