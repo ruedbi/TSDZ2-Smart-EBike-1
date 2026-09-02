@@ -3369,11 +3369,6 @@ static void uart_receive_package(void)
 			
 			// ui8_rx_buffer[2] current max?
 			
-			// get wheel diameter from display
-			ui8_oem_wheel_diameter = ui8_rx_buffer[3];
-			
-			// factor to calculate the value of the data to be displayed
-			ui16_display_data_factor = OEM_WHEEL_FACTOR * ui8_oem_wheel_diameter;
 			
 			// ui8_rx_buffer[4] test?
 			
@@ -3390,13 +3385,22 @@ static void uart_receive_package(void)
 				ui8_wheel_speed_max_array[STREET_MODE] = ui8_wheel_speed_max_array[OFFROAD_MODE];
 			}
 			// ruedbi: also get the wheel size from the display via ui8_oem_wheel_diameter; 
+			// this is the default behavior of the stock firmware.
 			// if value is smaller than the real size, the bike will drive faster than it should.
 			if( ui8_oem_wheel_diameter >= 26 && ui8_oem_wheel_diameter <= 29) {
 				// override wheel perimeter from display: convert diameter (inches) to perimeter (mm)
 				// Conversion: perimeter_mm = diameter_inches * 25.4 * π ≈ diameter_inches * 80
 				m_configuration_variables.ui16_wheel_perimeter = (uint16_t)(ui8_oem_wheel_diameter * 80U);
 			}
+#else
+			if( ui8_oem_wheel_diameter == 0){
+				if (WHEEL_PERIMETER >= 2250) ui8_oem_wheel_diameter = 28;
+				else if (WHEEL_PERIMETER >= 2100 ) ui8_oem_wheel_diameter = 27;
+				else ui8_oem_wheel_diameter = 26;
+			}
 #endif
+			// factor to calculate the value of the data to be displayed
+			ui16_display_data_factor = OEM_WHEEL_FACTOR * ui8_oem_wheel_diameter;
 			
 			// revert offroad speed limit to street after prolonged standstill
 			check_standstill_offroad_revert();
