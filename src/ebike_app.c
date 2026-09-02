@@ -99,6 +99,14 @@ static volatile uint32_t ui32_wh_since_power_on_x10 = 0;
 /// Overall consumed Wh x10 as 4 little-endian bytes, latched after each main-loop
 /// update so the shutdown ISR never has to add two 32-bit values on overlay RAM.
 volatile uint8_t ui8_consumed_wh_x10_for_shutdown_save[4];
+
+static volatile uint32_t ui32_odometer_meters = 0;
+volatile uint32_t ui32_odometer_offset_meters = 0;
+static volatile uint32_t ui32_odometer_since_power_on_meters = 0;
+static uint16_t ui16_odometer_speed_accumulator = 0;
+/// Overall odometer in meters as 4 little-endian bytes, latched after each update
+/// so the shutdown ISR never has to add 32-bit values on overlay RAM.
+volatile uint8_t ui8_odometer_meters_for_shutdown_save[4];
 volatile uint16_t ui16_battery_SOC_percentage_x10 = 0;
 static uint8_t ui8_battery_state_of_charge = 0;
 #if !defined (USER_SOC_LOOKUP_TABLE)
@@ -392,6 +400,8 @@ static void apply_torque_sensor_calibration(void);
 // battery soc percentage x10 calculation
 static void set_consumed_wh_offset_x10(uint32_t offset_x10);
 static void latch_consumed_wh_x10_for_shutdown_save(uint32_t ui32_overall_wh_x10);
+static void set_odometer_offset_meters(uint32_t offset_meters);
+static void latch_odometer_meters_for_shutdown_save(uint32_t ui32_overall_odometer_meters);
 static void calc_watt_hours_used(void);
 static void check_battery_soc(void);
 uint16_t read_battery_soc(void);
@@ -495,6 +505,14 @@ void ebike_app_init(void)
 		// no ride energy yet; latch the restored overall total for an immediate power-off
 		ui32_wh_x10 = ui32_wh_offset_x10;
 		latch_consumed_wh_x10_for_shutdown_save(ui32_wh_x10);
+	}
+
+	// odometer in meters at power on from EEPROM
+	{
+		uint32_t ui32_eeprom_odometer_meters = EEPROM_read_odometer_meters();
+		ui32_odometer_offset_meters = ui32_eeprom_odometer_meters;
+		ui32_odometer_meters = ui32_odometer_offset_meters;
+		latch_odometer_meters_for_shutdown_save(ui32_odometer_meters);
 	}
 
 	// unloaded pack voltage recorded at the last regular power-off; used at startup to detect
@@ -1860,6 +1878,16 @@ static void calc_wheel_speed(void)
     }
 	else {
 		ui16_wheel_speed_x10 = 0;
+	}
+
+	// integrate odometer in meters (1440 units of ui16_wheel_speed_x10 per 25 ms cycle = 1 meter)
+	ui16_odometer_speed_accumulator += ui16_wheel_speed_x10;
+	if (ui16_odometer_speed_accumulator >= 1440U) {
+		uint16_t ui16_delta_meters = ui16_odometer_speed_accumulator / 1440U;
+		ui16_odometer_speed_accumulator %= 1440U;
+		ui32_odometer_since_power_on_meters += (uint32_t)ui16_delta_meters;
+		ui32_odometer_meters = ui32_odometer_offset_meters + ui32_odometer_since_power_on_meters;
+		latch_odometer_meters_for_shutdown_save(ui32_odometer_meters);
 	}
 }
 
@@ -3929,7 +3957,17 @@ static void uart_send_package(void)
 #endif
 				  break;
 				case 11:
-					ui16_display_data = ui16_display_data_factor / ui16_motor_speed_erps;
+					// ODO in integer km (1 km resolution for 2-digit display)
+					if (ui32_odometer_meters >= 1000U) {
+						uint32_t ui32_odo_km = ui32_odometer_meters / 1000U;
+						if (ui32_odo_km > 65535UL) {
+							ui32_odo_km = 65535UL;
+						}
+						ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_odo_km;
+					}
+					else {
+						ui16_display_data = 0;
+					}
 				  break;
 				case 12:
 					ui16_duty_cycle_percent = (uint16_t) ((ui8_g_duty_cycle * (uint8_t)100) / PWM_DUTY_CYCLE_MAX) - 1;
@@ -4159,6 +4197,33 @@ uint32_t get_consumed_wh_x10(void)
 }
 
 
+static void latch_odometer_meters_for_shutdown_save(uint32_t ui32_overall_odometer_meters)
+{
+	ui8_odometer_meters_for_shutdown_save[0] = (uint8_t)(ui32_overall_odometer_meters);
+	ui8_odometer_meters_for_shutdown_save[1] = (uint8_t)(ui32_overall_odometer_meters >> 8);
+	ui8_odometer_meters_for_shutdown_save[2] = (uint8_t)(ui32_overall_odometer_meters >> 16);
+	ui8_odometer_meters_for_shutdown_save[3] = (uint8_t)(ui32_overall_odometer_meters >> 24);
+}
+
+
+static void set_odometer_offset_meters(uint32_t offset_meters)
+{
+	ui32_odometer_offset_meters = offset_meters;
+	ui16_odometer_speed_accumulator = 0;
+	ui32_odometer_since_power_on_meters = 0;
+	ui32_odometer_meters = offset_meters;
+	latch_odometer_meters_for_shutdown_save(offset_meters);
+	EEPROM_write_odometer_meters(offset_meters);
+}
+
+
+/// Returns the overall travelled distance in meters (offset plus this power-on session).
+uint32_t get_odometer_meters(void)
+{
+	return ui32_odometer_meters;
+}
+
+
 static void calc_watt_hours_used(void)
 {
 	// battery power x 10
@@ -4288,6 +4353,7 @@ static void check_battery_soc(void)
 						if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
 							ui16_battery_SOC_percentage_x10 = 1000;
 							set_consumed_wh_offset_x10(0);
+							set_odometer_offset_meters(0);
 						}
 						// if SOC calculation is set to auto: a non-full but charged/swapped pack
 						else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {

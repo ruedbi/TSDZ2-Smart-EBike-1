@@ -318,6 +318,49 @@ uint32_t EEPROM_read_consumed_wh_x10(void) {
         return ui32_value;
 }
 
+static void EEPROM_program_odometer_meters(uint32_t ui32_value) {
+    uint8_t ui8_i;
+    uint32_t ui32_address;
+
+    // store the 32-bit value little-endian across 4 consecutive EEPROM bytes
+    for (ui8_i = 0; ui8_i < 4; ui8_i++) {
+        ui32_address = (uint32_t)ADDRESS_ODOMETER_METERS_0 + ui8_i;
+        FLASH_ProgramByte(ui32_address, (uint8_t)(ui32_value >> (ui8_i * 8)));
+        // wait until end of programming flag is set before writing the next byte
+        while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {
+        }
+    }
+}
+
+void EEPROM_write_odometer_meters(uint32_t ui32_value) {
+    // standalone caller: data EEPROM is locked, so unlock it here first
+    FLASH_Unlock(FLASH_MEMTYPE_DATA);
+
+    // wait until data EEPROM area unlocked flag is set
+    while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {
+    }
+
+    EEPROM_program_odometer_meters(ui32_value);
+
+    // lock memory
+    FLASH_Lock(FLASH_MEMTYPE_DATA);
+}
+
+uint32_t EEPROM_read_odometer_meters(void) {
+    uint32_t ui32_value;
+
+    ui32_value = (uint32_t)FLASH_ReadByte(ADDRESS_ODOMETER_METERS_0);
+    ui32_value |= (uint32_t)FLASH_ReadByte(ADDRESS_ODOMETER_METERS_1) << 8;
+    ui32_value |= (uint32_t)FLASH_ReadByte(ADDRESS_ODOMETER_METERS_2) << 16;
+    ui32_value |= (uint32_t)FLASH_ReadByte(ADDRESS_ODOMETER_METERS_3) << 24;
+
+    if (ui32_value == 0xFFFFFFFFUL) {
+        return 0;
+    }
+
+    return ui32_value;
+}
+
 static uint8_t EEPROM_crc8(const uint8_t *ui8_data, uint8_t ui8_length) {
     uint8_t ui8_crc = 0x00;
     uint8_t ui8_i;
@@ -417,6 +460,12 @@ static void EEPROM_build_live_block(uint8_t *ui8_buffer) {
     // startup uses it to detect whether the battery was charged or swapped while powered off
     ui8_buffer[ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0 - EEPROM_BASE_ADDRESS] = (uint8_t)(ui16_battery_voltage_filtered_x10_for_shutdown_save & 0xFF);
     ui8_buffer[ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1 - EEPROM_BASE_ADDRESS] = (uint8_t)((ui16_battery_voltage_filtered_x10_for_shutdown_save >> 8) & 0xFF);
+
+    // travelled distance (odometer in meters) at power-off: copy the main-loop latch byte-wise
+    ui8_buffer[ADDRESS_ODOMETER_METERS_0 - EEPROM_BASE_ADDRESS] = ui8_odometer_meters_for_shutdown_save[0];
+    ui8_buffer[ADDRESS_ODOMETER_METERS_1 - EEPROM_BASE_ADDRESS] = ui8_odometer_meters_for_shutdown_save[1];
+    ui8_buffer[ADDRESS_ODOMETER_METERS_2 - EEPROM_BASE_ADDRESS] = ui8_odometer_meters_for_shutdown_save[2];
+    ui8_buffer[ADDRESS_ODOMETER_METERS_3 - EEPROM_BASE_ADDRESS] = ui8_odometer_meters_for_shutdown_save[3];
 }
 
 void EEPROM_save_shutdown_snapshot(void) {

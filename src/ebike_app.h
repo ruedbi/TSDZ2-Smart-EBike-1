@@ -65,4 +65,10 @@ uint32_t get_consumed_wh_x10(void);
 /// ISR can persist it with 8-bit copies instead of a 32-bit add on SDCC overlay RAM.
 extern volatile uint8_t ui8_consumed_wh_x10_for_shutdown_save[4];
 
+uint32_t get_odometer_meters(void);
+
+/// Overall odometer in meters, split little-endian in the main loop so the power-off
+/// ISR can persist it with 8-bit copies instead of a 32-bit add on SDCC overlay RAM.
+extern volatile uint8_t ui8_odometer_meters_for_shutdown_save[4];
+
 #endif /* EBIKE_APP_H_ */

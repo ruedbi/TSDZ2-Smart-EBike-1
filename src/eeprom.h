@@ -43,6 +43,12 @@
 // persisted as part of the block snapshot and used at startup for battery-change detection
 #define ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0		EEPROM_BASE_ADDRESS + 24
 #define ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1		EEPROM_BASE_ADDRESS + 25
+// travelled distance (odometer in meters), 32-bit little-endian (up to >4,000,000 km);
+// persisted as part of the block snapshot and cleared on full battery change like consumed Wh
+#define ADDRESS_ODOMETER_METERS_0						EEPROM_BASE_ADDRESS + 26
+#define ADDRESS_ODOMETER_METERS_1						EEPROM_BASE_ADDRESS + 27
+#define ADDRESS_ODOMETER_METERS_2						EEPROM_BASE_ADDRESS + 28
+#define ADDRESS_ODOMETER_METERS_3						EEPROM_BASE_ADDRESS + 29
 #define EEPROM_BYTES_STORED                             20
 
 // Block-based power-off persistence: the data EEPROM is treated as fixed-size blocks of
@@ -70,6 +76,10 @@ void EEPROM_controller(uint8_t ui8_operation, uint8_t ui8_byte_init);
 uint32_t EEPROM_read_consumed_wh_x10(void);
 /// Writes the consumed watt-hours x10 value; unlocks and re-locks the data EEPROM.
 void EEPROM_write_consumed_wh_x10(uint32_t ui32_value);
+
+uint32_t EEPROM_read_odometer_meters(void);
+/// Writes the odometer meters value; unlocks and re-locks the data EEPROM.
+void EEPROM_write_odometer_meters(uint32_t ui32_value);
 
 /// Programs one FLASH_BLOCK_SIZE block of the data EEPROM in a single FLASH_ProgramBlock()
 /// cycle. The last byte of \p ui8_buffer is overwritten with the CRC-8 of all preceding

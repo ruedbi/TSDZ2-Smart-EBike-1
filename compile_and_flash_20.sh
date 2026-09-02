@@ -11,7 +11,7 @@ else
 	echo "Release build"
 fi
 
-version="v2106_${MODE}_lm35_persistent_Wh_bat_reset_detect_block_write_o48h"
+version="v2107_${MODE}_lm35_persistent_Wh_ODO_in_km"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
