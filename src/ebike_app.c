@@ -45,6 +45,11 @@ static uint8_t ui8_auto_data_number_display = AUTO_DATA_NUMBER_DISPLAY;
 static uint8_t ui8_sequence_repeat_count = 0;
 static uint16_t ui16_display_data_factor = 0;
 
+/// Largest odometer reading (km) that still fits the three display digits, since the
+/// display renders (ui16_display_data_factor / ui16_display_data) as tenths and therefore
+/// tops out at 99.9. Higher readings are pegged at this value.
+#define ODOMETER_DISPLAY_MAX_KM						99U
+
 // ruedbi: Adaptive display scaling: enum for value types
 typedef enum {
 	DISPLAY_VALUE_TYPE_BATTERY_CURRENT_TARGET = 0,
@@ -60,7 +65,7 @@ static uint8_t ui8_delay_display_function = DELAY_MENU_ON;
 static uint8_t ui8_display_data_on_startup = DATA_DISPLAY_ON_STARTUP;
 static uint8_t ui8_set_parameter_enabled_temp = ENABLE_SET_PARAMETER_ON_STARTUP;
 static uint8_t ui8_auto_display_data_enabled_temp = ENABLE_AUTO_DATA_DISPLAY;
-static uint8_t ui8_street_mode_enabled_temp = ENABLE_STREET_MODE_ON_STARTUP;
+uint8_t ui8_street_mode_enabled_for_save = ENABLE_STREET_MODE_ON_STARTUP;
 static uint8_t ui8_torque_sensor_adv_enabled_temp = TORQUE_SENSOR_ADV_ON_STARTUP;
 static uint8_t ui8_assist_without_pedal_rotation_temp = MOTOR_ASSISTANCE_WITHOUT_PEDAL_ROTATION;
 static uint8_t ui8_walk_assist_enabled_array[2] = {ENABLE_WALK_ASSIST,STREET_MODE_WALK_ENABLED};
@@ -239,16 +244,18 @@ static const uint8_t s_speedToggleSequence[4U] = {
     GESTURE_DIRECTION_DOWN, GESTURE_DIRECTION_UP
 };
 
-// gesture sequence to enable offroad mode: UP – UP – UP – UP – UP – DOWN
-static const uint8_t s_enableOffroadSequence[6U] = {
+// gesture sequence to enable offroad mode: UP – UP – UP – UP – DOWN
+// four up steps is the most a display with OFF plus four assist levels can produce, because
+// pressing up at the top level leaves the level unchanged and yields no gesture step
+static const uint8_t s_enableOffroadSequence[5U] = {
     GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP,
-    GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP, GESTURE_DIRECTION_DOWN
+    GESTURE_DIRECTION_UP, GESTURE_DIRECTION_DOWN
 };
 
 /// Table of all hardcoded gestures.  Add further entries here to define new gestures.
 static const GestureDefinition s_gestureDefinitions[] = {
     { s_speedToggleSequence, 4U },    // gesture 0: offroad speed-limit toggle
-    { s_enableOffroadSequence, 6U }   // gesture 1: enable offroad mode (no toggle)
+    { s_enableOffroadSequence, 5U }   // gesture 1: enable offroad mode (no toggle)
 };
 
 /// Ring buffer that holds the last GESTURE_BUFFER_SIZE direction events.
@@ -474,6 +481,9 @@ void ebike_app_init(void)
 	ui8_display_function_status[1][OFF] = m_configuration_variables.ui8_auto_display_data_enabled;
 	// street mode on startup
 	ui8_display_function_status[0][ECO] = m_configuration_variables.ui8_street_mode_enabled;
+	// remember the stored street mode setting; the offroad gesture only changes the live copy,
+	// so this is what the EEPROM keeps and every power-on returns to
+	ui8_street_mode_enabled_for_save = m_configuration_variables.ui8_street_mode_enabled;
 	// startup boost on startup
 	ui8_display_function_status[1][ECO] = m_configuration_variables.ui8_startup_boost_enabled;
 	// torque sensor adv on startup
@@ -2570,9 +2580,12 @@ static void execute_gesture_action(uint8_t gestureIndex)
             ui8_speed_limit_in_offroad_mode = 1U - ui8_speed_limit_in_offroad_mode;
         }
     } else if (1U == gestureIndex) {
-        // gesture 1: force offroad mode (do not toggle)
+        // gesture 1: force offroad mode (do not toggle); RAM only, ui8_street_mode_enabled_for_save
+        // keeps the stored setting so the next power-on is back in street mode
         m_configuration_variables.ui8_street_mode_enabled = OFFROAD_MODE;
         ui8_speed_limit_in_offroad_mode = OFFROAD_MODE;
+        // track the live mode in the ECO menu status so the rider can verify it there
+        ui8_display_function_status[0][ECO] = m_configuration_variables.ui8_street_mode_enabled;
     }
     // further gesture actions can be added here with additional if-blocks
 }
@@ -3957,13 +3970,21 @@ static void uart_send_package(void)
 #endif
 				  break;
 				case 11:
-					// ODO in integer km (1 km resolution for 2-digit display)
+					// ODO in integer km: the display divides the factor by the sent value and
+					// renders the result as tenths, so the km reading is scaled by 10 here to
+					// come out as whole kilometres
 					if (ui32_odometer_meters >= 1000U) {
 						uint32_t ui32_odo_km = ui32_odometer_meters / 1000U;
-						if (ui32_odo_km > 65535UL) {
-							ui32_odo_km = 65535UL;
+						if (ui32_odo_km > ODOMETER_DISPLAY_MAX_KM) {
+							ui32_odo_km = ODOMETER_DISPLAY_MAX_KM;
 						}
-						ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_odo_km;
+						// clamped above, so the km value fits a byte; casting both operands to
+						// uint8_t ensures usage of MUL X,A
+						uint16_t ui16_odo_tenths = (uint16_t)((uint8_t) ui32_odo_km * (uint8_t)10U);
+						// round the divisor up: the display value is the factor divided by an
+						// integer, so rounding down here would let it exceed the requested km
+						// and overflow the 99.9 display field near the top of the range
+						ui16_display_data = (ui16_display_data_factor + ui16_odo_tenths - 1U) / ui16_odo_tenths;
 					}
 					else {
 						ui16_display_data = 0;

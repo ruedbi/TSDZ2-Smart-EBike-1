@@ -226,7 +226,8 @@ void EEPROM_init(void)
            ui8_array[ADDRESS_MOTOR_ASSISTANCE_WITH_ERROR_ENABLED - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_assist_with_error_enabled;
            ui8_array[ADDRESS_BATTERY_SOC - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_battery_SOC_percentage_8b;
            ui8_array[ADDRESS_SET_PARAMETER_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_set_parameter_enabled;
-           ui8_array[ADDRESS_STREET_MODE_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_street_mode_enabled;
+           // stored setting, not the live copy: a gesture-selected offroad mode must not persist
+           ui8_array[ADDRESS_STREET_MODE_ON_STARTUP - EEPROM_BASE_ADDRESS] = ui8_street_mode_enabled_for_save;
            ui8_array[ADDRESS_RIDING_MODE_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_riding_mode;
            ui8_array[ADDRESS_LIGHTS_CONFIGURATION_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_lights_configuration;
            ui8_array[ADDRESS_STARTUP_BOOST_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_startup_boost_enabled;
@@ -441,7 +442,8 @@ static void EEPROM_build_live_block(uint8_t *ui8_buffer) {
     // battery SOC at power-off: the value to be restored on the next startup
     ui8_buffer[ADDRESS_BATTERY_SOC - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_battery_SOC_percentage_8b;
     ui8_buffer[ADDRESS_SET_PARAMETER_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_set_parameter_enabled;
-    ui8_buffer[ADDRESS_STREET_MODE_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_street_mode_enabled;
+    // stored setting, not the live copy: a gesture-selected offroad mode must not persist
+    ui8_buffer[ADDRESS_STREET_MODE_ON_STARTUP - EEPROM_BASE_ADDRESS] = ui8_street_mode_enabled_for_save;
     ui8_buffer[ADDRESS_RIDING_MODE_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_riding_mode;
     ui8_buffer[ADDRESS_LIGHTS_CONFIGURATION_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_lights_configuration;
     ui8_buffer[ADDRESS_STARTUP_BOOST_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_startup_boost_enabled;

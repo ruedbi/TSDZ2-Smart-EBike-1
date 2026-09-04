@@ -71,4 +71,9 @@ uint32_t get_odometer_meters(void);
 /// ISR can persist it with 8-bit copies instead of a 32-bit add on SDCC overlay RAM.
 extern volatile uint8_t ui8_odometer_meters_for_shutdown_save[4];
 
+/// Street mode setting to be written to EEPROM, taken from the stored configuration at
+/// startup. The offroad gesture switches only the live configuration copy, so offroad stays
+/// RAM-only and the controller always powers on in the configured mode.
+extern uint8_t ui8_street_mode_enabled_for_save;
+
 #endif /* EBIKE_APP_H_ */
