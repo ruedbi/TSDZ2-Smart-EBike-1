@@ -47,7 +47,7 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define ENABLE_DZ40MINI_AS_VLCD5 1
 // #define RELEASE_BUILD
 // #define DEBUG_BUILD
-#define SCALE_WHEEL_SPEED_TIME_IN_OFFROAD_MODE
+// #define SCALE_WHEEL_SPEED_TIME_IN_OFFROAD_MODE
 
 // activate with my own limits:
 // #define LIMIT_CURRENTS
@@ -72,7 +72,7 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 // Manual battery-SOC/Wh override via the walk-assist ("down") button during the startup
 // window. Disabled by default; the automatic voltage-rise battery-swap detection in
 // ebike_app.c is unaffected either way.
-#define ENABLE_WALK_ASSIST_WH_RESET 0
+#define  ENABLE_WALK_ASSIST_WH_RESET 0
 
 // Speed-dependent motor phase current limit (see ebike_app.c)
 #define PHASE_CURRENT_SPEED_LIMIT_ENABLED 1

@@ -226,11 +226,11 @@ static uint16_t ui16_periodic_save_stopped_cycles = 0;
 #define GESTURE_DIRECTION_DOWN 1U
 
 /// Maximum number of steps a single gesture may have and the size of the direction ring buffer.
-#define GESTURE_BUFFER_SIZE    8U
+#define GESTURE_BUFFER_SIZE    5U
 
 /// Number of 100 ms ticks without a new direction event after which a partially matched
 /// gesture sequence is discarded and recognition restarts from the beginning.
-#define GESTURE_TIMEOUT_STEPS  30U
+#define GESTURE_TIMEOUT_STEPS  5U
 
 /// Compile-time description of one recognizable gesture sequence.
 typedef struct {
@@ -244,12 +244,12 @@ static const uint8_t s_speedToggleSequence[4U] = {
     GESTURE_DIRECTION_DOWN, GESTURE_DIRECTION_UP
 };
 
-// gesture sequence to enable offroad mode: UP – UP – UP – UP – DOWN
-// four up steps is the most a display with OFF plus four assist levels can produce, because
-// pressing up at the top level leaves the level unchanged and yields no gesture step
+// gesture sequence to enable offroad mode: UP – UP – DOWN – UP – UP
+// from Level 1 (ECO), pressing UP repeatedly reaches the top assist level in 3 UP steps,
+// then pressing DOWN yields 1 DOWN step
 static const uint8_t s_enableOffroadSequence[5U] = {
-    GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP,
-    GESTURE_DIRECTION_UP, GESTURE_DIRECTION_DOWN
+    GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP,
+    GESTURE_DIRECTION_DOWN, GESTURE_DIRECTION_UP, GESTURE_DIRECTION_UP
 };
 
 /// Table of all hardcoded gestures.  Add further entries here to define new gestures.
@@ -268,8 +268,8 @@ static uint8_t s_gestureBufferCount = 0U;
 static uint8_t s_gestureTimeoutCounter = 0U;
 
 /// Number of 100 ms ticks of standstill required before the offroad speed limit
-/// automatically reverts to street limit.  1200 * 100 ms = 2 minutes.
-#define STANDSTILL_OFFROAD_REVERT_STEPS 1200U
+/// automatically reverts to street limit.  900 * 100 ms = 90 seconds
+#define STANDSTILL_OFFROAD_REVERT_STEPS 900U
 
 /// Counts consecutive 100 ms ticks where the bike is standing still while
 /// the offroad speed limit is active; resets to zero when moving or when revert fires.
@@ -3180,7 +3180,6 @@ static void uart_receive_package(void)
 				ui8_display_data_on_startup = 1; // SOC%
 				ui8_display_data_enabled = 1;
 			}
-			
 			// torque sensor calibration *********************************
 			// if torque sensor calibration is enabled (within 25 seconds of power on)
 			// or if the display supports walk assist at OFF level (XH18)
