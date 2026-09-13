@@ -37,18 +37,16 @@
  #define ADDRESS_TORQUE_SENSOR_ADV_ON_STARTUP			EEPROM_BASE_ADDRESS + 19
  #define ADDRESS_CONSUMED_WH_X10_0						EEPROM_BASE_ADDRESS + 20
  #define ADDRESS_CONSUMED_WH_X10_1						EEPROM_BASE_ADDRESS + 21
- #define ADDRESS_CONSUMED_WH_X10_2						EEPROM_BASE_ADDRESS + 22
-#define ADDRESS_CONSUMED_WH_X10_3						EEPROM_BASE_ADDRESS + 23
 // unloaded battery voltage (x10 V) recorded at the last regular power-off, 16-bit little-endian;
 // persisted as part of the block snapshot and used at startup for battery-change detection
-#define ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0		EEPROM_BASE_ADDRESS + 24
-#define ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1		EEPROM_BASE_ADDRESS + 25
+#define ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0		EEPROM_BASE_ADDRESS + 22
+#define ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1		EEPROM_BASE_ADDRESS + 23
 // travelled distance (odometer in meters), 32-bit little-endian (up to >4,000,000 km);
 // persisted as part of the block snapshot and cleared on full battery change like consumed Wh
-#define ADDRESS_ODOMETER_METERS_0						EEPROM_BASE_ADDRESS + 26
-#define ADDRESS_ODOMETER_METERS_1						EEPROM_BASE_ADDRESS + 27
-#define ADDRESS_ODOMETER_METERS_2						EEPROM_BASE_ADDRESS + 28
-#define ADDRESS_ODOMETER_METERS_3						EEPROM_BASE_ADDRESS + 29
+#define ADDRESS_ODOMETER_METERS_0						EEPROM_BASE_ADDRESS + 24
+#define ADDRESS_ODOMETER_METERS_1						EEPROM_BASE_ADDRESS + 25
+#define ADDRESS_ODOMETER_METERS_2						EEPROM_BASE_ADDRESS + 26
+#define ADDRESS_ODOMETER_METERS_3						EEPROM_BASE_ADDRESS + 27
 #define EEPROM_BYTES_STORED                             20
 
 // Block-based power-off persistence: the data EEPROM is treated as fixed-size blocks of
@@ -73,9 +71,9 @@ void EEPROM_init(void);
 
 void EEPROM_controller(uint8_t ui8_operation, uint8_t ui8_byte_init);
 
-uint32_t EEPROM_read_consumed_wh_x10(void);
+uint16_t EEPROM_read_consumed_wh_x10(void);
 /// Writes the consumed watt-hours x10 value; unlocks and re-locks the data EEPROM.
-void EEPROM_write_consumed_wh_x10(uint32_t ui32_value);
+void EEPROM_write_consumed_wh_x10(uint16_t ui16_value);
 
 uint32_t EEPROM_read_odometer_meters(void);
 /// Writes the odometer meters value; unlocks and re-locks the data EEPROM.

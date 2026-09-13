@@ -1,17 +1,18 @@
 #!/bin/bash
 set -e
 
-if [ "$1" == "debug" ]; then
-	CFLAGS=-DDEBUG_BUILD
-	MODE=debug
-	echo "Debug build"
-else
+echo "arg1 = $1"
+if [ "$1" == "release" ]; then
 	CFLAGS=-DRELEASE_BUILD
 	MODE=release
 	echo "Release build"
+else
+	CFLAGS=-DDEBUG_BUILD
+	MODE=testing
+	echo "Test build"
 fi
 
-version="v2108_${MODE}_lm35_persistent_Wh_ODO_in_km"
+version="v2109_${MODE}_persistent_Wh_ODO_in_km_16_bit"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 

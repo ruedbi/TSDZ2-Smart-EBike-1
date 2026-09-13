@@ -273,24 +273,24 @@ void EEPROM_init(void)
    FLASH_Lock(FLASH_MEMTYPE_DATA);
  }
  
-/// Programs the 4 consumed watt-hours x10 bytes, assuming the data EEPROM is
+/// Programs the 2 consumed watt-hours x10 bytes, assuming the data EEPROM is
 /// already unlocked. Shared by the locked and unlocked public entry points so
 /// the actual byte programming logic exists in only one place.
-static void EEPROM_program_consumed_wh_x10(uint32_t ui32_value) {
+static void EEPROM_program_consumed_wh_x10(uint16_t ui16_value) {
     uint8_t ui8_i;
     uint32_t ui32_address;
 
-    // store the 32-bit value little-endian across 4 consecutive EEPROM bytes
-    for (ui8_i = 0; ui8_i < 4; ui8_i++) {
+    // store the 16-bit value little-endian across 2 consecutive EEPROM bytes
+    for (ui8_i = 0; ui8_i < 2; ui8_i++) {
         ui32_address = (uint32_t)ADDRESS_CONSUMED_WH_X10_0 + ui8_i;
-        FLASH_ProgramByte(ui32_address, (uint8_t)(ui32_value >> (ui8_i * 8)));
+        FLASH_ProgramByte(ui32_address, (uint8_t)(ui16_value >> (ui8_i * 8)));
         // wait until end of programming flag is set before writing the next byte
         while (FLASH_GetFlagStatus(FLASH_FLAG_EOP) == RESET) {
         }
     }
 }
 
-void EEPROM_write_consumed_wh_x10(uint32_t ui32_value) {
+void EEPROM_write_consumed_wh_x10(uint16_t ui16_value) {
     // standalone caller: data EEPROM is locked, so unlock it here first
     FLASH_Unlock(FLASH_MEMTYPE_DATA);
 
@@ -298,25 +298,23 @@ void EEPROM_write_consumed_wh_x10(uint32_t ui32_value) {
     while (FLASH_GetFlagStatus(FLASH_FLAG_DUL) == RESET) {
     }
 
-    EEPROM_program_consumed_wh_x10(ui32_value);
+    EEPROM_program_consumed_wh_x10(ui16_value);
 
     // lock memory
     FLASH_Lock(FLASH_MEMTYPE_DATA);
 }
 
-uint32_t EEPROM_read_consumed_wh_x10(void) {
-        uint32_t ui32_value;
+uint16_t EEPROM_read_consumed_wh_x10(void) {
+        uint16_t ui16_value;
     
-        ui32_value = (uint32_t)FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_0);
-        ui32_value |= (uint32_t)FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_1) << 8;
-        ui32_value |= (uint32_t)FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_2) << 16;
-        ui32_value |= (uint32_t)FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_3) << 24;
+        ui16_value = (uint16_t)FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_0);
+        ui16_value |= (uint16_t)FLASH_ReadByte(ADDRESS_CONSUMED_WH_X10_1) << 8;
     
-        if (ui32_value == 0xFFFFFFFFUL) {
+        if (ui16_value == 0xFFFFU) {
             return 0;
         }
     
-        return ui32_value;
+        return ui16_value;
 }
 
 static void EEPROM_program_odometer_meters(uint32_t ui32_value) {
@@ -452,11 +450,9 @@ static void EEPROM_build_live_block(uint8_t *ui8_buffer) {
     ui8_buffer[ADDRESS_TORQUE_SENSOR_ADV_ON_STARTUP - EEPROM_BASE_ADDRESS] = p_configuration_variables->ui8_torque_sensor_adv_enabled;
 
     // consumed watt-hours x10 at power-off: copy the main-loop latch byte-wise so
-    // this ISR-reachable path never performs a 32-bit add on SDCC overlay RAM
+    // this ISR-reachable path never performs a 16-bit access on SDCC overlay RAM
     ui8_buffer[ADDRESS_CONSUMED_WH_X10_0 - EEPROM_BASE_ADDRESS] = ui8_consumed_wh_x10_for_shutdown_save[0];
     ui8_buffer[ADDRESS_CONSUMED_WH_X10_1 - EEPROM_BASE_ADDRESS] = ui8_consumed_wh_x10_for_shutdown_save[1];
-    ui8_buffer[ADDRESS_CONSUMED_WH_X10_2 - EEPROM_BASE_ADDRESS] = ui8_consumed_wh_x10_for_shutdown_save[2];
-    ui8_buffer[ADDRESS_CONSUMED_WH_X10_3 - EEPROM_BASE_ADDRESS] = ui8_consumed_wh_x10_for_shutdown_save[3];
 
     // unloaded battery voltage x10 at power-off, stored little-endian across 2 bytes; the next
     // startup uses it to detect whether the battery was charged or swapped while powered off

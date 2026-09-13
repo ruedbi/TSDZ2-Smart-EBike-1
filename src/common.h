@@ -47,7 +47,9 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define ENABLE_DZ40MINI_AS_VLCD5 1
 // #define RELEASE_BUILD
 // #define DEBUG_BUILD
+#if defined (RELEASE_BUILD)
 #define SCALE_WHEEL_SPEED_TIME_IN_OFFROAD_MODE
+#endif // defined (RELEASE_BUILD)
 
 // activate with my own limits:
 // #define LIMIT_CURRENTS

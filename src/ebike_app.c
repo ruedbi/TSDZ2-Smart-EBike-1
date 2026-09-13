@@ -97,17 +97,13 @@ static uint16_t ui16_battery_voltage_at_last_shutdown_x10 = 0;
 static uint16_t ui16_battery_power_x10 = 0;															  
 static uint16_t ui16_battery_power_filtered_x10 = 0;
 static uint16_t ui16_actual_battery_capacity = (uint16_t)(((uint32_t) TARGET_MAX_BATTERY_CAPACITY * ACTUAL_BATTERY_CAPACITY_PERCENT) / 100);
-static volatile uint32_t ui32_wh_x10 = 0;
-static uint32_t ui32_wh_sum_x10 = 0;
-volatile uint32_t ui32_wh_offset_x10 = 0;
-static volatile uint32_t ui32_wh_since_power_on_x10 = 0;
-/// Overall consumed Wh x10 as 4 little-endian bytes, latched after each main-loop
-/// update so the shutdown ISR never has to add two 32-bit values on overlay RAM.
-volatile uint8_t ui8_consumed_wh_x10_for_shutdown_save[4];
+static volatile uint16_t ui16_wh_x10 = 0;
+static uint16_t ui16_wh_power_accumulator = 0;
+/// Overall consumed Wh x10 as 2 little-endian bytes, latched after each main-loop
+/// update so the shutdown ISR never has to access 16-bit variables on overlay RAM.
+volatile uint8_t ui8_consumed_wh_x10_for_shutdown_save[2];
 
 static volatile uint32_t ui32_odometer_meters = 0;
-volatile uint32_t ui32_odometer_offset_meters = 0;
-static volatile uint32_t ui32_odometer_since_power_on_meters = 0;
 static uint16_t ui16_odometer_speed_accumulator = 0;
 /// Overall odometer in meters as 4 little-endian bytes, latched after each update
 /// so the shutdown ISR never has to add 32-bit values on overlay RAM.
@@ -279,7 +275,7 @@ static uint16_t s_standstillOffroadRevertCounter = 0U;
 static uint8_t ui8_display_ready_flag = 0;
 static uint8_t ui8_startup_counter = 0;
 static uint8_t ui8_startup_flag = 0;
-/// Startup data display phase: 0 = configured metric (voltage/SOC%), 1 = consumed Wh
+/// Startup data display phase: 0 = configured metric (voltage/SOC%), 1 = consumed Wh, 2 = odometer km
 static uint8_t ui8_startup_display_phase = 0;
 static uint16_t ui16_oem_wheel_speed_time = 0;
 static uint8_t ui8_oem_wheel_diameter = 0;
@@ -405,9 +401,9 @@ static void calc_oem_wheel_speed(void);
 static void apply_torque_sensor_calibration(void);
 
 // battery soc percentage x10 calculation
-static void set_consumed_wh_offset_x10(uint32_t offset_x10);
-static void latch_consumed_wh_x10_for_shutdown_save(uint32_t ui32_overall_wh_x10);
-static void set_odometer_offset_meters(uint32_t offset_meters);
+static void set_consumed_wh_x10(uint16_t value_x10);
+static void latch_consumed_wh_x10_for_shutdown_save(uint16_t ui16_overall_wh_x10);
+static void set_odometer_meters(uint32_t value_meters);
 static void latch_odometer_meters_for_shutdown_save(uint32_t ui32_overall_odometer_meters);
 static void calc_watt_hours_used(void);
 static void check_battery_soc(void);
@@ -504,24 +500,21 @@ void ebike_app_init(void)
 		 
 	// consumed watt-hours x10 at power on from EEPROM, or SOC fallback when EEPROM is empty
 	{
-		uint32_t ui32_eeprom_wh_x10 = EEPROM_read_consumed_wh_x10();
+		uint16_t ui16_eeprom_wh_x10 = EEPROM_read_consumed_wh_x10();
 
-		if ((ui32_eeprom_wh_x10 == 0U) && (ui16_battery_SOC_percentage_x10 < 1000U)) {
-			ui32_wh_offset_x10 = ((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100;
+		if ((ui16_eeprom_wh_x10 == 0U) && (ui16_battery_SOC_percentage_x10 < 1000U)) {
+			ui16_wh_x10 = (uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
 		}
 		else {
-			ui32_wh_offset_x10 = ui32_eeprom_wh_x10;
+			ui16_wh_x10 = ui16_eeprom_wh_x10;
 		}
-		// no ride energy yet; latch the restored overall total for an immediate power-off
-		ui32_wh_x10 = ui32_wh_offset_x10;
-		latch_consumed_wh_x10_for_shutdown_save(ui32_wh_x10);
+		// latch the restored overall total for an immediate power-off
+		latch_consumed_wh_x10_for_shutdown_save(ui16_wh_x10);
 	}
 
 	// odometer in meters at power on from EEPROM
 	{
-		uint32_t ui32_eeprom_odometer_meters = EEPROM_read_odometer_meters();
-		ui32_odometer_offset_meters = ui32_eeprom_odometer_meters;
-		ui32_odometer_meters = ui32_odometer_offset_meters;
+		ui32_odometer_meters = EEPROM_read_odometer_meters();
 		latch_odometer_meters_for_shutdown_save(ui32_odometer_meters);
 	}
 
@@ -1895,8 +1888,7 @@ static void calc_wheel_speed(void)
 	if (ui16_odometer_speed_accumulator >= 1440U) {
 		uint16_t ui16_delta_meters = ui16_odometer_speed_accumulator / 1440U;
 		ui16_odometer_speed_accumulator %= 1440U;
-		ui32_odometer_since_power_on_meters += (uint32_t)ui16_delta_meters;
-		ui32_odometer_meters = ui32_odometer_offset_meters + ui32_odometer_since_power_on_meters;
+		ui32_odometer_meters += (uint32_t)ui16_delta_meters;
 		latch_odometer_meters_for_shutdown_save(ui32_odometer_meters);
 	}
 }
@@ -1992,7 +1984,11 @@ void get_battery_voltage(void)
 	
     // low pass filter the voltage readed value, to avoid possible fast spikes/noise
     ui16_adc_battery_voltage_accumulated -= ui16_adc_battery_voltage_accumulated >> READ_BATTERY_VOLTAGE_FILTER_COEFFICIENT;
-    ui16_adc_battery_voltage_accumulated += ui16_adc_voltage;
+    // atomic read of 16-bit variable updated by 19 kHz PWM ISR (Issue A: prevent torn read on 8-bit STM8)
+    disableInterrupts();
+    uint16_t ui16_adc_voltage_local = ui16_adc_voltage;
+    enableInterrupts();
+    ui16_adc_battery_voltage_accumulated += ui16_adc_voltage_local;
 	ui16_battery_voltage_filtered_x10 = ((ui16_adc_battery_voltage_accumulated >> READ_BATTERY_VOLTAGE_FILTER_COEFFICIENT) * BATTERY_VOLTAGE_PER_10_BIT_ADC_STEP_X1000) / 100;
 }
 
@@ -3168,12 +3164,12 @@ static void uart_receive_package(void)
 			// gated by ENABLE_WALK_ASSIST_WH_RESET (common.h); disabled by default
 			if (ENABLE_WALK_ASSIST_WH_RESET && (ui8_walk_assist_button_pressed)&&(!ui8_startup_flag)) {
 				ui16_battery_SOC_percentage_x10 = read_battery_soc();
-				set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+				set_consumed_wh_x10((uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100));
 				if (!ui8_battery_SOC_reset_flag) {
 					ui8_battery_SOC_reset_flag = 1;
 					// restart startup counter
 					ui8_startup_counter = 0;
-					// show SOC% for a full first half again before Wh
+					// show SOC% for a full first third again before Wh and ODO
 					ui8_startup_display_phase = 0;
 				}
 				// for display soc %
@@ -3836,7 +3832,7 @@ static void uart_send_package(void)
 			}
 			else if ((ui8_display_data_on_startup)&&(!ui8_startup_flag)) {
 				if (ui8_startup_display_phase == 0U) {
-					// first half: configured startup metric (SOC% or voltage)
+					// first third: configured startup metric (SOC% or voltage)
 					switch (ui8_display_data_on_startup) {
 						case 1:
 #if UNITS_TYPE == MILES
@@ -3854,24 +3850,38 @@ static void uart_send_package(void)
 							break;
 					}
 				}
-				else {
-					// second half: consumed Wh (same formula as display data case 10)
+				else if (ui8_startup_display_phase == 1U) {
+					// second third: consumed Wh (same formula as display data case 10)
 #if UNITS_TYPE == MILES
-					if (ui32_wh_x10 > 0U) {
-						ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_wh_x10;
+					if (ui16_wh_x10 > 0U) {
+						ui16_display_data = ui16_display_data_factor / ui16_wh_x10;
 					}
 					else {
 						ui16_display_data = 0;
 					}
 #else
-					if (ui32_wh_x10 >= 10U) {
-						ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
+					if (ui16_wh_x10 >= 10U) {
+						ui16_display_data = ui16_display_data_factor / (ui16_wh_x10 / 10U);
 					}
 					else {
 						// fresh/full pack (< 1 Wh consumed): blank rather than divide by zero
 						ui16_display_data = 0;
 					}
 #endif
+				}
+				else {
+					// third third: odometer km (same formula as display data case 11)
+					if (ui32_odometer_meters >= 1000U) {
+						uint32_t ui32_odo_km = ui32_odometer_meters / 1000U;
+						if (ui32_odo_km > ODOMETER_DISPLAY_MAX_KM) {
+							ui32_odo_km = ODOMETER_DISPLAY_MAX_KM;
+						}
+						uint16_t ui16_odo_tenths = (uint16_t)((uint8_t) ui32_odo_km * (uint8_t)10U);
+						ui16_display_data = (ui16_display_data_factor + ui16_odo_tenths - 1U) / ui16_odo_tenths;
+					}
+					else {
+						ui16_display_data = 0;
+					}
 				}
 			}
 			else if ((ui8_menu_counter <= ui8_delay_display_function)&&(ui8_menu_index > 0U)&&((ui8_assist_level < TOUR)||(ui8_display_alternative_lights_configuration))) { // OFF & ECO & alternative lights configuration
@@ -3953,15 +3963,15 @@ static void uart_send_package(void)
 				  break;
 				case 10:
 #if UNITS_TYPE == MILES
-					if (ui32_wh_x10 > 0U) {
-						ui16_display_data = ui16_display_data_factor / (uint16_t) ui32_wh_x10;
+					if (ui16_wh_x10 > 0U) {
+						ui16_display_data = ui16_display_data_factor / ui16_wh_x10;
 					}
 					else {
 						ui16_display_data = 0;
 					}
 #else
-					if (ui32_wh_x10 >= 10U) {
-						ui16_display_data = ui16_display_data_factor / (uint16_t) (ui32_wh_x10 / 10U);
+					if (ui16_wh_x10 >= 10U) {
+						ui16_display_data = ui16_display_data_factor / (ui16_wh_x10 / 10U);
 					}
 					else {
 						ui16_display_data = 0;
@@ -4184,36 +4194,29 @@ static void calc_oem_wheel_speed(void)
 } 
 
 
-/// Copies the overall consumed Wh x10 into the 4-byte latch used at power-off.
-/// Must run in the main loop (or init): a 32-bit add/shift inside the PWM ISR
-/// uses SDCC overlay RAM that nested ISRs (UART, TIM4, Hall) share and can
-/// clobber, which dropped the offset and persisted only the current-ride Wh.
-static void latch_consumed_wh_x10_for_shutdown_save(uint32_t ui32_overall_wh_x10)
+/// Copies the overall consumed Wh x10 into the 2-byte latch used at power-off.
+/// Must run in the main loop (or init): writing byte-wise so the shutdown path
+/// never accesses 16-bit variables on SDCC overlay RAM that nested ISRs share.
+static void latch_consumed_wh_x10_for_shutdown_save(uint16_t ui16_overall_wh_x10)
 {
-	ui8_consumed_wh_x10_for_shutdown_save[0] = (uint8_t)(ui32_overall_wh_x10);
-	ui8_consumed_wh_x10_for_shutdown_save[1] = (uint8_t)(ui32_overall_wh_x10 >> 8);
-	ui8_consumed_wh_x10_for_shutdown_save[2] = (uint8_t)(ui32_overall_wh_x10 >> 16);
-	ui8_consumed_wh_x10_for_shutdown_save[3] = (uint8_t)(ui32_overall_wh_x10 >> 24);
+	ui8_consumed_wh_x10_for_shutdown_save[0] = (uint8_t)(ui16_overall_wh_x10);
+	ui8_consumed_wh_x10_for_shutdown_save[1] = (uint8_t)(ui16_overall_wh_x10 >> 8);
 }
 
 
-static void set_consumed_wh_offset_x10(uint32_t offset_x10)
+static void set_consumed_wh_x10(uint16_t value_x10)
 {
-	ui32_wh_offset_x10 = offset_x10;
-	ui32_wh_sum_x10 = 0;
-	ui32_wh_since_power_on_x10 = 0;
-	ui32_wh_x10 = offset_x10;
-	latch_consumed_wh_x10_for_shutdown_save(offset_x10);
-	EEPROM_write_consumed_wh_x10(offset_x10);
+	ui16_wh_power_accumulator = 0;
+	ui16_wh_x10 = value_x10;
+	latch_consumed_wh_x10_for_shutdown_save(value_x10);
+	EEPROM_write_consumed_wh_x10(value_x10);
 }
 
 
-/// Returns the overall consumed watt-hours x10 (offset plus this power-on session).
-/// The value is the main-loop total, not a fresh 32-bit add, so callers including
-/// the shutdown path stay consistent with what the display showed.
-uint32_t get_consumed_wh_x10(void)
+/// Returns the constantly updated overall consumed watt-hours x10.
+uint16_t get_consumed_wh_x10(void)
 {
-	return ui32_wh_x10;
+	return ui16_wh_x10;
 }
 
 
@@ -4226,14 +4229,12 @@ static void latch_odometer_meters_for_shutdown_save(uint32_t ui32_overall_odomet
 }
 
 
-static void set_odometer_offset_meters(uint32_t offset_meters)
+static void set_odometer_meters(uint32_t value_meters)
 {
-	ui32_odometer_offset_meters = offset_meters;
 	ui16_odometer_speed_accumulator = 0;
-	ui32_odometer_since_power_on_meters = 0;
-	ui32_odometer_meters = offset_meters;
-	latch_odometer_meters_for_shutdown_save(offset_meters);
-	EEPROM_write_odometer_meters(offset_meters);
+	ui32_odometer_meters = value_meters;
+	latch_odometer_meters_for_shutdown_save(value_meters);
+	EEPROM_write_odometer_meters(value_meters);
 }
 
 
@@ -4249,19 +4250,17 @@ static void calc_watt_hours_used(void)
 	// battery power x 10
 	ui16_battery_power_x10 = (uint16_t)(((uint32_t) ui16_battery_voltage_calibrated_and_filtered_x10 * ui8_battery_current_filtered_x10) / 10);
 	
-	// ui32_wh_sum_x10/ui32_wh_since_power_on_x10/ui32_wh_x10 are 32-bit values updated here in
-	// the foreground, but also read by get_consumed_wh_x10() from the PWM ISR's low-voltage
-	// shutdown-save trigger (motor.c). On this 8-bit CPU a 32-bit update is several byte-wide
-	// bus operations, so without this guard the ISR could preempt mid-update and persist a torn
-	// (half-old/half-new) Wh value at power-off. Disabling interrupts makes the update atomic.
+	// ui16_wh_power_accumulator and ui16_wh_x10 are updated atomically to prevent
+	// preemption mid-update by the PWM ISR's low-voltage shutdown-save trigger (motor.c).
 	disableInterrupts();
-	// consumed watt-hours
-	ui32_wh_sum_x10 += ui16_battery_power_x10;
-	// calculate watt-hours X10 since power on
-	ui32_wh_since_power_on_x10 = ui32_wh_sum_x10 / 32400; // 36000 -10% calibration to compensate for battery losses
-	// calculate watt-hours X10 since last full charge
-	ui32_wh_x10 = ui32_wh_offset_x10 + ui32_wh_since_power_on_x10;
-	latch_consumed_wh_x10_for_shutdown_save(ui32_wh_x10);
+	ui16_wh_power_accumulator += ui16_battery_power_x10;
+	while (ui16_wh_power_accumulator >= 32400U) {
+		ui16_wh_power_accumulator -= 32400U; // 36000 -10% calibration to compensate for battery losses
+		if (ui16_wh_x10 < 0xFFFFU) {
+			ui16_wh_x10++;
+		}
+	}
+	latch_consumed_wh_x10_for_shutdown_save(ui16_wh_x10);
 	enableInterrupts();
 }
 
@@ -4345,7 +4344,7 @@ static void check_battery_soc(void)
 	}
 	else { // SOC calculation set to auto or Wh
 		// calculate percentage battery capacity used x10
-		ui16_battery_SOC_used_x10 = (uint16_t)(((uint32_t) ui32_wh_x10 * 100) / ui16_actual_battery_capacity);
+		ui16_battery_SOC_used_x10 = (uint16_t)(((uint32_t) ui16_wh_x10 * 100) / ui16_actual_battery_capacity);
 		
 		// limit used percentage to 100 x10
 		if (ui16_battery_SOC_used_x10 > 1000) {
@@ -4358,39 +4357,44 @@ static void check_battery_soc(void)
 	if ((ui8_display_ready_flag)&&(!ui8_startup_flag)) {
 		if (ui8_startup_counter < DELAY_MENU_ON) {
 			ui8_startup_counter++;
-			// waiting for voltage filter
-			if (ui8_startup_counter >= (DELAY_MENU_ON >> 1)) {
-				// second half of startup: show consumed Wh after voltage/SOC%
+			// phase transitions for the three-part startup display
+			if (ui8_startup_counter >= (DELAY_MENU_ON / 3)) {
+				// second third of startup: show consumed Wh
 				ui8_startup_display_phase = 1;
-				if (!ui8_battery_SOC_reset_flag) {
-					// Only accept a reset when the unloaded voltage has risen since the last
-					// power-off (battery charged or swapped to a fuller pack). This hysteresis
-					// gate prevents a short ride - which leaves the pack above the full
-					// threshold - from re-resetting SOC and zeroing consumed Wh every power cycle.
-					if (is_battery_change_detected(ui16_battery_voltage_calibrated_and_filtered_x10,
-												   ui16_battery_voltage_at_last_shutdown_x10)) {
-						// if the battery is fully charged
-						if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
-							ui16_battery_SOC_percentage_x10 = 1000;
-							set_consumed_wh_offset_x10(0);
-							set_odometer_offset_meters(0);
-						}
-						// if SOC calculation is set to auto: a non-full but charged/swapped pack
-						else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
-							ui16_actual_battery_SOC_x10 = read_battery_soc();
-							// check soc percentage
-							if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
-							  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
-								// sync soc percentage to the voltage-derived value; do not zero the
-								// consumed Wh offset here as the pack is not known to be full
-								ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
-								set_consumed_wh_offset_x10(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
-							}
+			}
+			if (ui8_startup_counter >= ((DELAY_MENU_ON * 2) / 3)) {
+				// final third of startup: show odometer km
+				ui8_startup_display_phase = 2;
+			}
+			// battery SOC reset check (once voltage filter has settled in 2nd third)
+			if ((ui8_startup_counter >= (DELAY_MENU_ON / 3)) && (!ui8_battery_SOC_reset_flag)) {
+				// Only accept a reset when the unloaded voltage has risen since the last
+				// power-off (battery charged or swapped to a fuller pack). This hysteresis
+				// gate prevents a short ride - which leaves the pack above the full
+				// threshold - from re-resetting SOC and zeroing consumed Wh every power cycle.
+				if (is_battery_change_detected(ui16_battery_voltage_calibrated_and_filtered_x10,
+											   ui16_battery_voltage_at_last_shutdown_x10)) {
+					// if the battery is fully charged
+					if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10) {
+						ui16_battery_SOC_percentage_x10 = 1000;
+						set_consumed_wh_x10(0);
+						set_odometer_meters(0);
+					}
+					// if SOC calculation is set to auto: a non-full but charged/swapped pack
+					else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
+						ui16_actual_battery_SOC_x10 = read_battery_soc();
+						// check soc percentage
+						if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
+						  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
+							// sync soc percentage to the voltage-derived value; do not zero the
+							// consumed Wh value here as the pack is not known to be full
+							ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
+							set_consumed_wh_x10((uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100));
 						}
 					}
-					// run the detection only once per power-on regardless of the outcome
-					ui8_battery_SOC_reset_flag = 1;
 				}
+				// run the detection only once per power-on regardless of the outcome
+				ui8_battery_SOC_reset_flag = 1;
 			}
 		}
 		else {

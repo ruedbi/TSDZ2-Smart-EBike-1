@@ -59,11 +59,11 @@ struct_configuration_variables* get_configuration_variables(void);
 
 void ebike_app_init(void);
 
-uint32_t get_consumed_wh_x10(void);
+uint16_t get_consumed_wh_x10(void);
 
 /// Overall consumed Wh x10, split little-endian in the main loop so the power-off
-/// ISR can persist it with 8-bit copies instead of a 32-bit add on SDCC overlay RAM.
-extern volatile uint8_t ui8_consumed_wh_x10_for_shutdown_save[4];
+/// ISR can persist it with 8-bit copies instead of a 16-bit access on SDCC overlay RAM.
+extern volatile uint8_t ui8_consumed_wh_x10_for_shutdown_save[2];
 
 uint32_t get_odometer_meters(void);
 
