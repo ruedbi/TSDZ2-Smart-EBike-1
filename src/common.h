@@ -69,7 +69,7 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 // and the bike has then stood still (wheel speed 0) for the time below.
 #define ENABLE_PERIODIC_SHUTDOWN_SAVE 1
 #define PERIODIC_SAVE_MIN_TRIP_DISTANCE_MM 1000000UL  // 1 km
-#define PERIODIC_SAVE_STOPPED_SECONDS      5U
+#define PERIODIC_SAVE_STOPPED_SECONDS      3U
 
 // Manual battery-SOC/Wh override via the walk-assist ("down") button during the startup
 // window. Disabled by default; the automatic voltage-rise battery-swap detection in

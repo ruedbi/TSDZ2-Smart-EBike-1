@@ -499,11 +499,13 @@ void ebike_app_init(void)
 	ui16_battery_SOC_percentage_x10 = ((uint16_t) m_configuration_variables.ui8_battery_SOC_percentage_8b) << 2;
 		 
 	// consumed watt-hours x10 at power on from EEPROM, or SOC fallback when EEPROM is empty
+	uint8_t ui8_eeprom_was_blank = 0;
 	{
 		uint16_t ui16_eeprom_wh_x10 = EEPROM_read_consumed_wh_x10();
 
 		if ((ui16_eeprom_wh_x10 == 0U) && (ui16_battery_SOC_percentage_x10 < 1000U)) {
 			ui16_wh_x10 = (uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+			ui8_eeprom_was_blank = 1;
 		}
 		else {
 			ui16_wh_x10 = ui16_eeprom_wh_x10;
@@ -518,9 +520,17 @@ void ebike_app_init(void)
 		latch_odometer_meters_for_shutdown_save(ui32_odometer_meters);
 	}
 
+	// if the EEPROM was blank, block 1 has never been written; create a valid snapshot now
+	// so that a sudden power loss before the first periodic save still restores the estimated
+	// Wh state on the next boot (instead of falling back to blank EEPROM defaults again)
+	if (ui8_eeprom_was_blank) {
+		EEPROM_save_shutdown_snapshot();
+	}
+
 	// unloaded pack voltage recorded at the last regular power-off; used at startup to detect
 	// whether the battery was charged or swapped while the system was off (0 when EEPROM blank)
 	ui16_battery_voltage_at_last_shutdown_x10 = EEPROM_read_battery_voltage_at_shutdown_x10();
+
 
 	// make startup boost array
 	ui16_startup_boost_factor_array[0] = STARTUP_BOOST_TORQUE_FACTOR;
@@ -3860,6 +3870,7 @@ static void uart_send_package(void)
 						ui16_display_data = 0;
 					}
 #else
+					// note: the display shows no value < 3 (speed filter)
 					if (ui16_wh_x10 >= 10U) {
 						ui16_display_data = ui16_display_data_factor / (ui16_wh_x10 / 10U);
 					}
@@ -3979,7 +3990,7 @@ static void uart_send_package(void)
 #endif
 				  break;
 				case 11:
-					// ODO in integer km: the display divides the factor by the sent value and
+					// ruedbi: ODO in integer km: the display divides the factor by the sent value and
 					// renders the result as tenths, so the km reading is scaled by 10 here to
 					// come out as whole kilometres
 					if (ui32_odometer_meters >= 1000U) {
@@ -3993,6 +4004,7 @@ static void uart_send_package(void)
 						// round the divisor up: the display value is the factor divided by an
 						// integer, so rounding down here would let it exceed the requested km
 						// and overflow the 99.9 display field near the top of the range
+						// note: the display shows no value < 3 (speed filter)
 						ui16_display_data = (ui16_display_data_factor + ui16_odo_tenths - 1U) / ui16_odo_tenths;
 					}
 					else {
@@ -4379,9 +4391,13 @@ static void check_battery_soc(void)
 						ui16_battery_SOC_percentage_x10 = 1000;
 						set_consumed_wh_x10(0);
 						set_odometer_meters(0);
+						// persist the zeroed state immediately so block 1 is valid;
+						// without this a sudden power loss before the next periodic save
+						// would let the old block 1 promote and undo the reset
+						EEPROM_save_shutdown_snapshot();
 					}
-					// if SOC calculation is set to auto: a non-full but charged/swapped pack
-					else if (m_configuration_variables.ui8_soc_percent_calculation == SOC_CALC_AUTO) {
+					// if SOC calculation is set to auto or WH: a non-full but charged/swapped pack
+					else if (m_configuration_variables.ui8_soc_percent_calculation != SOC_CALC_VOLTS) {
 						ui16_actual_battery_SOC_x10 = read_battery_soc();
 						// check soc percentage
 						if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
@@ -4390,6 +4406,8 @@ static void check_battery_soc(void)
 							// consumed Wh value here as the pack is not known to be full
 							ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
 							set_consumed_wh_x10((uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100));
+							// persist the updated SOC/Wh to block 1 immediately
+							EEPROM_save_shutdown_snapshot();
 						}
 					}
 				}
