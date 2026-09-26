@@ -74,7 +74,7 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 // Manual battery-SOC/Wh override via the walk-assist ("down") button during the startup
 // window. Disabled by default; the automatic voltage-rise battery-swap detection in
 // ebike_app.c is unaffected either way.
-#define  ENABLE_WALK_ASSIST_WH_RESET 0
+#define  ENABLE_WALK_ASSIST_WH_RESET 1
 
 // Speed-dependent motor phase current limit (see ebike_app.c)
 #define PHASE_CURRENT_SPEED_LIMIT_ENABLED 1
@@ -83,7 +83,7 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define PHASE_CURRENT_SPEED_LOW_X10 130
 #define PHASE_CURRENT_SPEED_MEDIUM_X10 200
 // Phase current ADC limit above speed medium; ~0.16 A per step = 16A
-#define ADC_10_BIT_MOTOR_PHASE_CURRENT_PROTECT 100
+#define ADC_10_BIT_MOTOR_PHASE_CURRENT_PROTECT 130
 #endif // PHASE_CURRENT_SPEED_LIMIT_ENABLED
 
 #endif // ENABLE_VLCD5

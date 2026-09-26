@@ -43,6 +43,7 @@
  };
  
 static uint8_t ui8_error_number = 0;
+static uint8_t ui8_eeprom_key_was_uninitialized = 0;
 
 /// Shared 128-byte image for block program/promote. File-scope so the PWM ISR
 /// save path does not put a FLASH_BLOCK_SIZE array on SDCC overlay RAM (nested
@@ -89,6 +90,7 @@ void EEPROM_init(void)
    // check if key is valid
    if (ui8_saved_key != DEFAULT_VALUE_KEY)
    {
+     ui8_eeprom_key_was_uninitialized = 1;
      // set to default values
      EEPROM_controller(SET_TO_DEFAULT, 0);
    }
@@ -96,6 +98,11 @@ void EEPROM_init(void)
    // read from EEPROM
    EEPROM_controller(READ_FROM_MEMORY, 0);
  }
+
+uint8_t EEPROM_key_was_uninitialized(void)
+{
+  return ui8_eeprom_key_was_uninitialized;
+}
  
  
  

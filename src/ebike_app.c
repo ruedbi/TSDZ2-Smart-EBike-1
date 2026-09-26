@@ -503,8 +503,13 @@ void ebike_app_init(void)
 	{
 		uint16_t ui16_eeprom_wh_x10 = EEPROM_read_consumed_wh_x10();
 
-		if ((ui16_eeprom_wh_x10 == 0U) && (ui16_battery_SOC_percentage_x10 < 1000U)) {
-			ui16_wh_x10 = (uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+		if ((ui16_eeprom_wh_x10 == 0U) && EEPROM_key_was_uninitialized()) {
+			if (ui16_battery_SOC_percentage_x10 < 1000U) {
+				ui16_wh_x10 = (uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
+			}
+			else {
+				ui16_wh_x10 = 0;
+			}
 			ui8_eeprom_was_blank = 1;
 		}
 		else {
@@ -4304,7 +4309,6 @@ static uint8_t is_battery_change_detected(uint16_t voltage_x10, uint16_t last_sh
 static void check_battery_soc(void)
 {
 	uint16_t ui16_battery_SOC_used_x10;
-	uint16_t ui16_actual_battery_SOC_x10;
 	uint16_t ui16_battery_voltage_x10;
 	uint16_t ui16_fluctuate_battery_voltage_x10;
 	uint16_t ui16_battery_voltage_calibrated_x10;
@@ -4395,20 +4399,6 @@ static void check_battery_soc(void)
 						// without this a sudden power loss before the next periodic save
 						// would let the old block 1 promote and undo the reset
 						EEPROM_save_shutdown_snapshot();
-					}
-					// if SOC calculation is set to auto or WH: a non-full but charged/swapped pack
-					else if (m_configuration_variables.ui8_soc_percent_calculation != SOC_CALC_VOLTS) {
-						ui16_actual_battery_SOC_x10 = read_battery_soc();
-						// check soc percentage
-						if (((ui16_actual_battery_SOC_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10) < ui16_battery_SOC_percentage_x10)
-						  || (ui16_actual_battery_SOC_x10 > (ui16_battery_SOC_percentage_x10 + BATTERY_SOC_PERCENT_THRESHOLD_X10))) {
-							// sync soc percentage to the voltage-derived value; do not zero the
-							// consumed Wh value here as the pack is not known to be full
-							ui16_battery_SOC_percentage_x10 = ui16_actual_battery_SOC_x10;
-							set_consumed_wh_x10((uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100));
-							// persist the updated SOC/Wh to block 1 immediately
-							EEPROM_save_shutdown_snapshot();
-						}
 					}
 				}
 				// run the detection only once per power-on regardless of the outcome

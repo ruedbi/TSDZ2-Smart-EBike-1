@@ -68,6 +68,7 @@
  #define WRITE_TO_MEMORY       2
  
 void EEPROM_init(void);
+uint8_t EEPROM_key_was_uninitialized(void);
 
 void EEPROM_controller(uint8_t ui8_operation, uint8_t ui8_byte_init);
 
