@@ -16,8 +16,9 @@
 #include "uart.h"
 #include "eeprom.h"
 #include "lights.h"
-#include "common.h"
-#include "config.h"
+// via main.h:
+// #include "config.h"
+// #include "common.h"
 
 volatile struct_configuration_variables m_configuration_variables;
 

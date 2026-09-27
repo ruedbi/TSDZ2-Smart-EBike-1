@@ -11,8 +11,20 @@ else
 	MODE=testing
 	echo "Test build"
 fi
+if [ "$2" == "26" ]; then
+CFLAGS+=" -DWHEEL_26INCH"
+WHEEL=26
+else if [ "$2" == "28" ]; then
+CFLAGS+=" -DWHEEL_28INCH"
+WHEEL=28
+else
+echo "no wheel size defined, using value from config.h"
+WHEEL=XX
+fi
+fi
+echo "CFLAGS= $CFLAGS ($WHEEL)"
 
-version="v2109_${MODE}_persistent_Wh_ODO_in_km_16_bit"
+version="v2110_${MODE}_${WHEEL}_persistent_Wh_ODO_in_km_16_bit_hyst3_phase_current_limit_20A"
 settings_date=$(date +%Y%m%d)
 settings_time=$(date +%H%M)
 
@@ -27,7 +39,7 @@ make clean || true
 
 # Build firmware
 echo Build started...
-make all CFLAGS=$CFLAGS
+make all CFLAGS="$CFLAGS"
 
 # Save new firmware
 echo Copying firmware to release folder.

@@ -3,7 +3,7 @@
 	"tasks": [
 		{
 			"type": "process",
-			"label": "Build testing",
+			"label": "Build testing 26",
 			"command": "C:\\Program Files\\WSL\\wsl.exe",
 			"args": [
 				"--distribution-id",
@@ -15,7 +15,7 @@
 				"--",
 				"bash",
 				"-lic",
-				"./compile_and_flash_20.sh"
+				"./compile_and_flash_20.sh 26"
 			],
 			"presentation": {
 				"echo": false,
@@ -32,7 +32,7 @@
 		},
 		{
 			"type": "process",
-			"label": "Build release",
+			"label": "Build release 26",
 			"command": "C:\\Program Files\\WSL\\wsl.exe",
 			"args": [
 				"--distribution-id",
@@ -44,7 +44,65 @@
 				"--",
 				"bash",
 				"-lic",
-				"./compile_and_flash_20.sh release"
+				"./compile_and_flash_20.sh release 26"
+			],
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "process",
+			"label": "Build testing 28",
+			"command": "C:\\Program Files\\WSL\\wsl.exe",
+			"args": [
+				"--distribution-id",
+				"{12aa5b17-2c05-4391-ac8c-f4b6fa206224}",
+				"--cd",
+				"/mnt/c/Users/ruedi/Development/TSDZ2-Smart-EBike-1-ssh",
+				"-u",
+				"ruedbi",
+				"--",
+				"bash",
+				"-lic",
+				"./compile_and_flash_20.sh debug 28"
+			],
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "process",
+			"label": "Build release 28",
+			"command": "C:\\Program Files\\WSL\\wsl.exe",
+			"args": [
+				"--distribution-id",
+				"{12aa5b17-2c05-4391-ac8c-f4b6fa206224}",
+				"--cd",
+				"/mnt/c/Users/ruedi/Development/TSDZ2-Smart-EBike-1-ssh",
+				"-u",
+				"ruedbi",
+				"--",
+				"bash",
+				"-lic",
+				"./compile_and_flash_20.sh release 28"
 			],
 			"presentation": {
 				"echo": false,

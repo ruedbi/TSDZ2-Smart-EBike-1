@@ -11,7 +11,7 @@
  #include "stm8s.h"
  #include "stm8s_flash.h"
  #include "main.h"
- #include "common.h"
+//  #include "common.h"
  #include "eeprom.h"
  #include "ebike_app.h"
  #include "motor.h"

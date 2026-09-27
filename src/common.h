@@ -10,8 +10,8 @@
 #ifndef COMMON_COMMON_H_
 #define COMMON_COMMON_H_
 
-#include "config.h"
 
+#include "config.h"
 #include <stdint.h>
 
 // riding modes
@@ -85,6 +85,20 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 // Phase current ADC limit above speed medium; ~0.16 A per step = 16A
 #define ADC_10_BIT_MOTOR_PHASE_CURRENT_PROTECT 130
 #endif // PHASE_CURRENT_SPEED_LIMIT_ENABLED
+
+#if ! defined WHEEL_PERIMETER
+#error "WHEEL_PERIMETER must be defined - check include order: common - after config.h"
+#endif
+
+#if defined WHEEL_26INCH
+#undef WHEEL_PERIMETER
+#define WHEEL_PERIMETER 2025
+#else
+#if defined WHEEL_28INCH
+#undef WHEEL_PERIMETER
+#define WHEEL_PERIMETER 2285
+#endif
+#endif
 
 #endif // ENABLE_VLCD5
 
