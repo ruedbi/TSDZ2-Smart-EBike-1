@@ -45,8 +45,6 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 
 #if ENABLE_VLCD5
 #define ENABLE_DZ40MINI_AS_VLCD5 1
-// #define RELEASE_BUILD
-// #define DEBUG_BUILD
 #if defined (RELEASE_BUILD)
 #define SCALE_WHEEL_SPEED_TIME_IN_OFFROAD_MODE
 #endif // defined (RELEASE_BUILD)
@@ -59,7 +57,8 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 #define PHASE_CURRENT_LIMIT 20 // Amps; OSF default: 30A
 #endif // LIMIT_CURRENTS
 
-#define USER_SOC_LOOKUP_TABLE
+// the original table seems to be more accurate, so:
+// #define USER_SOC_LOOKUP_TABLE
 
 #define BLOCK_SAVE
 #define COPY_TO_RAM
@@ -75,6 +74,14 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 // window. Disabled by default; the automatic voltage-rise battery-swap detection in
 // ebike_app.c is unaffected either way.
 #define  ENABLE_WALK_ASSIST_WH_RESET 1
+
+// correction factor for the Wh calculation
+// 100 == 100%, means no correction (threshold 36000)
+// 111 equals ~+11% Wh (threshold 32400, original OSF default)
+// 110 equals +10% Wh (threshold 32727)
+#define WH_PERCENT  120
+// derived (evaluated at compile time):
+#define WH_ACCUMULATOR_THRESHOLD ((uint16_t)(((uint32_t)36000UL * 100UL + ((WH_PERCENT) / 2)) / (WH_PERCENT)))
 
 // Speed-dependent motor phase current limit (see ebike_app.c)
 #define PHASE_CURRENT_SPEED_LIMIT_ENABLED 1
@@ -92,11 +99,13 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 
 #if defined WHEEL_26INCH
 #undef WHEEL_PERIMETER
-#define WHEEL_PERIMETER 2025
+#define WHEEL_PERIMETER 2025 // Marathon e-motion
 #else
 #if defined WHEEL_28INCH
 #undef WHEEL_PERIMETER
-#define WHEEL_PERIMETER 2285
+#define WHEEL_PERIMETER 2285 // Conti Ruban
+#else 
+#error "no wheel size defined"
 #endif
 #endif
 

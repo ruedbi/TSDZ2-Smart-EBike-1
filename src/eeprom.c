@@ -486,7 +486,11 @@ uint16_t EEPROM_read_battery_voltage_at_shutdown_x10(void) {
     ui16_value = (uint16_t)FLASH_ReadByte(ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_0);
     ui16_value |= (uint16_t)FLASH_ReadByte(ADDRESS_BATTERY_VOLTAGE_AT_SHUTDOWN_X10_1) << 8;
 
-    // a blank STM8 data EEPROM reads 0x00, so 0 is the intended "uninitialized" sentinel
+    // a blank STM8 data EEPROM reads 0x00 (or 0xFF if erased), so 0 is the intended "uninitialized" sentinel
+    if (ui16_value == 0xFFFFU) {
+        return 0;
+    }
+
     return ui16_value;
 }
 

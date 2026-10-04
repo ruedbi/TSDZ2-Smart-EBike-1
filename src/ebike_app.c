@@ -499,19 +499,13 @@ void ebike_app_init(void)
 	// percentage remaining battery capacity x10 at power on
 	ui16_battery_SOC_percentage_x10 = ((uint16_t) m_configuration_variables.ui8_battery_SOC_percentage_8b) << 2;
 		 
-	// consumed watt-hours x10 at power on from EEPROM, or SOC fallback when EEPROM is empty
-	uint8_t ui8_eeprom_was_blank = 0;
+	// consumed watt-hours x10 at power on from EEPROM, or 0 when EEPROM is uninitialized
+	// (the true Wh estimate is calculated once the voltage filter settles in check_battery_soc)
 	{
 		uint16_t ui16_eeprom_wh_x10 = EEPROM_read_consumed_wh_x10();
 
 		if ((ui16_eeprom_wh_x10 == 0U) && EEPROM_key_was_uninitialized()) {
-			if (ui16_battery_SOC_percentage_x10 < 1000U) {
-				ui16_wh_x10 = (uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100);
-			}
-			else {
-				ui16_wh_x10 = 0;
-			}
-			ui8_eeprom_was_blank = 1;
+			ui16_wh_x10 = 0;
 		}
 		else {
 			ui16_wh_x10 = ui16_eeprom_wh_x10;
@@ -524,13 +518,6 @@ void ebike_app_init(void)
 	{
 		ui32_odometer_meters = EEPROM_read_odometer_meters();
 		latch_odometer_meters_for_shutdown_save(ui32_odometer_meters);
-	}
-
-	// if the EEPROM was blank, block 1 has never been written; create a valid snapshot now
-	// so that a sudden power loss before the first periodic save still restores the estimated
-	// Wh state on the next boot (instead of falling back to blank EEPROM defaults again)
-	if (ui8_eeprom_was_blank) {
-		EEPROM_save_shutdown_snapshot();
 	}
 
 	// unloaded pack voltage recorded at the last regular power-off; used at startup to detect
@@ -4272,8 +4259,15 @@ static void calc_watt_hours_used(void)
 	// preemption mid-update by the PWM ISR's low-voltage shutdown-save trigger (motor.c).
 	disableInterrupts();
 	ui16_wh_power_accumulator += ui16_battery_power_x10;
-	while (ui16_wh_power_accumulator >= 32400U) {
-		ui16_wh_power_accumulator -= 32400U; // 36000 -10% calibration to compensate for battery losses
+	
+#if defined WH_PERCENT
+	uint16_t ui16_wh_power_threshold = WH_ACCUMULATOR_THRESHOLD;
+#else
+	// 36000 -10% calibration to compensate for battery losses:
+	uint16_t ui16_wh_power_threshold = 32400;
+#endif
+	while (ui16_wh_power_accumulator >= ui16_wh_power_threshold) {
+		ui16_wh_power_accumulator -= ui16_wh_power_threshold;
 		if (ui16_wh_x10 < 0xFFFFU) {
 			ui16_wh_x10++;
 		}
@@ -4399,6 +4393,13 @@ static void check_battery_soc(void)
 						// persist the zeroed state immediately so block 1 is valid;
 						// without this a sudden power loss before the next periodic save
 						// would let the old block 1 promote and undo the reset
+						EEPROM_save_shutdown_snapshot();
+					}
+					// battery change detected (voltage rise >= hysteresis) or EEPROM clear (shutdown voltage == 0):
+					// estimate consumed Wh from settled battery voltage
+					else {
+						ui16_battery_SOC_percentage_x10 = read_battery_soc();
+						set_consumed_wh_x10((uint16_t)(((uint32_t)(1000 - ui16_battery_SOC_percentage_x10) * ui16_actual_battery_capacity) / 100));
 						EEPROM_save_shutdown_snapshot();
 					}
 				}
