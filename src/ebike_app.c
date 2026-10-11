@@ -278,6 +278,17 @@ static uint8_t ui8_startup_counter = 0;
 static uint8_t ui8_startup_flag = 0;
 /// Startup data display phase: 0 = configured metric (voltage/SOC%), 1 = consumed Wh, 2 = odometer km
 static uint8_t ui8_startup_display_phase = 0;
+
+// Startup display timing constants (check_battery_soc() runs at 100 ms cadence = 10 ticks per second)
+#define DISPLAY_INIT_DELAY        ((uint8_t)(DISPLAY_INIT_TIME_S * 10U))
+#define STARTUP_PHASE_1_DELAY     ((uint8_t)(DISPLAY_INIT_DELAY + (DELAY_MENU_ON / 3)))
+#define STARTUP_PHASE_2_DELAY     ((uint8_t)(DISPLAY_INIT_DELAY + ((DELAY_MENU_ON * 2) / 3)))
+#define STARTUP_TOTAL_DELAY       ((uint8_t)(DISPLAY_INIT_DELAY + DELAY_MENU_ON))
+
+#if (((DISPLAY_INIT_TIME_S * 10U) + DELAY_MENU_ON) > 255)
+#error "DISPLAY_INIT_DELAY + DELAY_MENU_ON exceeds uint8_t capacity for ui8_startup_counter"
+#endif
+
 static uint16_t ui16_oem_wheel_speed_time = 0;
 static uint8_t ui8_oem_wheel_diameter = 0;
 static uint32_t ui32_odometer_compensation_mm = ZERO_ODOMETER_COMPENSATION;
@@ -538,9 +549,7 @@ void ebike_app_init(void)
 	}
 	
 	// enable data displayed on startup
-#if DATA_DISPLAY_ON_STARTUP
 	ui8_display_data_enabled = 1;
-#endif
 
 	// calculate max adc battery current from the received battery current limit
 	ui8_adc_battery_current_max_temp_1 = (uint8_t)((uint16_t)(m_configuration_variables.ui8_battery_current_max * 100U)
@@ -3845,11 +3854,9 @@ static void uart_send_package(void)
 #endif
 							break;
 						case 2:
+						default:
 							// battery voltage soc filtered and calibrated x10
 							ui16_display_data = ui16_display_data_factor / ui16_battery_voltage_calibrated_and_filtered_x10;
-							break;
-						default:
-							ui16_display_data = 0;
 							break;
 					}
 				}
@@ -4366,19 +4373,22 @@ static void check_battery_soc(void)
 	
 	// automatic reset battery SOC percentage x10 at power on
 	if ((ui8_display_ready_flag)&&(!ui8_startup_flag)) {
-		if (ui8_startup_counter < DELAY_MENU_ON) {
+		if (ui8_startup_counter < STARTUP_TOTAL_DELAY) {
 			ui8_startup_counter++;
-			// phase transitions for the three-part startup display
-			if (ui8_startup_counter >= (DELAY_MENU_ON / 3)) {
+			// phase transitions for the three-part startup display:
+			// first value (Voltage): DISPLAY_INIT_DELAY + DELAY_MENU_ON / 3
+			// second value (Wh): DELAY_MENU_ON / 3
+			// third value (ODO): DELAY_MENU_ON / 3
+			if (ui8_startup_counter >= STARTUP_PHASE_1_DELAY) {
 				// second third of startup: show consumed Wh
 				ui8_startup_display_phase = 1;
 			}
-			if (ui8_startup_counter >= ((DELAY_MENU_ON * 2) / 3)) {
+			if (ui8_startup_counter >= STARTUP_PHASE_2_DELAY) {
 				// final third of startup: show odometer km
 				ui8_startup_display_phase = 2;
 			}
 			// battery SOC reset check (once voltage filter has settled in 2nd third)
-			if ((ui8_startup_counter >= (DELAY_MENU_ON / 3)) && (!ui8_battery_SOC_reset_flag)) {
+			if ((ui8_startup_counter >= STARTUP_PHASE_1_DELAY) && (!ui8_battery_SOC_reset_flag)) {
 				// Only accept a reset when the unloaded voltage has risen since the last
 				// power-off (battery charged or swapped to a fuller pack). This hysteresis
 				// gate prevents a short ride - which leaves the pack above the full

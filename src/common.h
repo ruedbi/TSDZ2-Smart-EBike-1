@@ -75,6 +75,12 @@ void crc16(uint8_t ui8_data, uint16_t *ui16_crc);
 // ebike_app.c is unaffected either way.
 #define  ENABLE_WALK_ASSIST_WH_RESET 1
 
+// Display initialization boot time (in seconds) during which the LCD cannot display data.
+// The startup Voltage display phase is extended by this duration.
+#ifndef DISPLAY_INIT_TIME_S
+#define DISPLAY_INIT_TIME_S 7U
+#endif
+
 // correction factor for the Wh calculation
 // 100 == 100%, means no correction (threshold 36000)
 // 111 equals ~+11% Wh (threshold 32400, original OSF default)
